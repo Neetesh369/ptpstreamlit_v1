@@ -25,7 +25,15 @@ with open("client_secrets.json", "w") as f:
 def authenticate_user():
     gauth = GoogleAuth()
     gauth.LoadClientConfigFile("client_secrets.json")
-    gauth.LocalWebserverAuth()  # Opens OAuth login in browser
+
+    try:
+        # Use `CommandLineAuth` instead of `LocalWebserverAuth` for remote environments
+        gauth.CommandLineAuth()  
+        st.success("Authentication successful!")
+    except Exception as e:
+        st.error(f"Authentication failed: {str(e)}")
+        return None
+
     return GoogleDrive(gauth)
 
 drive = authenticate_user()
