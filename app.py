@@ -1,14 +1,30 @@
 import streamlit as st
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+import json
+import os
+
+# Load secrets from Streamlit
+google_secrets = st.secrets["google"]
+
+# Create client_secrets.json dynamically
+client_secrets = {
+    "web": {
+        "client_id": google_secrets.client_id,
+        "client_secret": google_secrets.client_secret,
+        "auth_uri": google_secrets.auth_uri,
+        "token_uri": google_secrets.token_uri,
+        "redirect_uris": [google_secrets.redirect_uri]
+    }
+}
+
+with open("client_secrets.json", "w") as f:
+    json.dump(client_secrets, f)
 
 # Authenticate user with OAuth
 def authenticate_user():
-    st.title("Pair Trading Backtest - Google Drive Authentication")
     gauth = GoogleAuth()
+    gauth.LoadClientConfigFile("client_secrets.json")
     gauth.LocalWebserverAuth()  # Opens OAuth login in browser
     return GoogleDrive(gauth)
 
