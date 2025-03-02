@@ -1,23 +1,24 @@
 import streamlit as st
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
 import json
 import os
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 
-# Load secrets from Streamlit
+# Load secrets from Streamlit Cloud
 google_secrets = st.secrets["google"]
 
 # Create client_secrets.json dynamically
 client_secrets = {
-    "web": {
+    "installed": {  # "installed" is used for OAuth in Streamlit Cloud
         "client_id": google_secrets.client_id,
         "client_secret": google_secrets.client_secret,
-        "auth_uri": google_secrets.auth_uri,
-        "token_uri": google_secrets.token_uri,
-        "redirect_uris": [google_secrets.redirect_uri]
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob", "http://localhost"]
     }
 }
 
+# Write the JSON file
 with open("client_secrets.json", "w") as f:
     json.dump(client_secrets, f)
 
@@ -27,11 +28,11 @@ def authenticate_user():
     gauth.LoadClientConfigFile("client_secrets.json")
 
     try:
-        # Use `CommandLineAuth` instead of `LocalWebserverAuth` for remote environments
-        gauth.CommandLineAuth()  
+        # Use CommandLineAuth() instead of LocalWebserverAuth() for Streamlit Cloud
+        gauth.CommandLineAuth()
         st.success("Authentication successful!")
     except Exception as e:
-        st.error(f"Authentication failed: {str(e)}")
+        st.error(f"Authentication failed: {e}")
         return None
 
     return GoogleDrive(gauth)
