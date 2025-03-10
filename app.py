@@ -1,40 +1,15 @@
 import streamlit as st
-import json
-import os
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
-
-# Load secrets from Streamlit Cloud
-google_secrets = st.secrets["google"]
-
-# Create client_secrets.json dynamically
-client_secrets = {
-    "installed": {  # "installed" is used for OAuth in Streamlit Cloud
-        "client_id": google_secrets.client_id,
-        "client_secret": google_secrets.client_secret,
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob", "http://localhost"]
-    }
-}
-
-# Write the JSON file
-with open("client_secrets.json", "w") as f:
-    json.dump(client_secrets, f)
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 
 # Authenticate user with OAuth
 def authenticate_user():
+    st.title("Pair Trading Backtest - Google Drive Authentication")
     gauth = GoogleAuth()
-    gauth.LoadClientConfigFile("client_secrets.json")
-
-    try:
-        # Use CommandLineAuth() instead of LocalWebserverAuth() for Streamlit Cloud
-        gauth.CommandLineAuth()
-        st.success("Authentication successful!")
-    except Exception as e:
-        st.error(f"Authentication failed: {e}")
-        return None
-
+    gauth.LocalWebserverAuth()  # Opens OAuth login in browser
     return GoogleDrive(gauth)
 
 drive = authenticate_user()
