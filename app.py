@@ -73,13 +73,12 @@ def main():
 
     # Download button
     st.write("### Download Data")
-    if st.button("Download JSON"):
-        st.download_button(
-            label="Download Stock Data as JSON",
-            data=serialized_data,
-            file_name="stock_data.json",
-            mime="application/json"
-        )
+    st.download_button(
+        label="Download Stock Data as JSON",
+        data=serialized_data,
+        file_name="stock_data.json",
+        mime="application/json"
+    )
 
     # Delete button (example functionality)
     st.write("### Delete Data")
