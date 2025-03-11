@@ -1,145 +1,91 @@
 import streamlit as st
-import yfinance as yf
+import pandas as pd
 import json
+import math
 from datetime import datetime
 
-# Title of the app
-st.title("Stock Price Database with IndexedDB")
+# Custom JSON encoder to handle Timestamp and NaN values
+class CustomEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, pd.Timestamp):
+            return obj.strftime('%Y-%m-%d')
+        elif isinstance(obj, float) and math.isnan(obj):
+            return None
+        return super().default(obj)
 
-# Fetch stock data from Yahoo Finance
-def fetch_stock_data(ticker):
-    stock = yf.Ticker(ticker)
-    data = stock.history(period="1mo")  # Fetch 1 month of historical data
-    # Convert DataFrame to a list of dictionaries and serialize dates
-    data = data.reset_index()
-    data["Date"] = data["Date"].dt.strftime("%Y-%m-%d")  # Convert Timestamp to string
-    return data.to_dict(orient="records")  # Convert to list of dictionaries
-
-# HTML and JavaScript to interact with IndexedDB
-html_code = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Stock Price Database</title>
-</head>
-<body>
-    <h2>Stock Price Database</h2>
-    <button onclick="downloadData()">Download Data</button>
-    <button onclick="viewData()">View Data</button>
-    <button onclick="deleteData()">Delete Data</button>
-    <p id="status"></p>
-    <pre id="output"></pre>
-
-    <script>
-        let db;
-        const dbName = "StockDB";
-        const storeName = "StockStore";
-
-        function openDB() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open(dbName, 1);
-
-                request.onupgradeneeded = function(event) {
-                    db = event.target.result;
-                    if (!db.objectStoreNames.contains(storeName)) {
-                        db.createObjectStore(storeName, { keyPath: "id" });
-                        console.log("Database created and store initialized.");
-                    }
-                };
-
-                request.onsuccess = function(event) {
-                    db = event.target.result;
-                    console.log("Database opened successfully.");
-                    resolve(db);
-                };
-
-                request.onerror = function(event) {
-                    console.error("Error opening database:", event.target.error);
-                    reject("Error opening database.");
-                };
-            });
+# Sample stock data (replace this with your actual data loading logic)
+def load_stock_data():
+    # Example stock data with Timestamp and NaN values
+    stock_data = [
+        {
+            "Date": pd.Timestamp("2025-02-10"),
+            "Close": float('nan'),
+            "High": float('nan'),
+            "Low": float('nan'),
+            "Open": float('nan'),
+            "Volume": 0,
+            "Dividends": 0.25,
+            "Stock Splits": 0.0,
+            "symbol": "AAPL"
+        },
+        {
+            "Date": pd.Timestamp("2025-02-11"),
+            "Close": 232.62,
+            "High": 235.23,
+            "Low": 228.13,
+            "Open": 228.20,
+            "Volume": 53718400,
+            "Dividends": 0.0,
+            "Stock Splits": 0.0,
+            "symbol": "AAPL"
         }
+    ]
+    return stock_data
 
-        function downloadData() {
-            console.log("Download Data button clicked.");
-            const stockData = JSON.parse('{{ stock_data | tojson | safe }}');
-            console.log("Stock data received:", stockData);
+# Function to clean and serialize stock data
+def clean_and_serialize_stock_data(stock_data):
+    cleaned_data = []
+    for entry in stock_data:
+        cleaned_entry = {}
+        for key, value in entry.items():
+            if isinstance(value, pd.Timestamp):
+                cleaned_entry[key] = value.strftime('%Y-%m-%d')
+            elif isinstance(value, float) and math.isnan(value):
+                cleaned_entry[key] = None
+            else:
+                cleaned_entry[key] = value
+        cleaned_data.append(cleaned_entry)
+    return json.dumps(cleaned_data, cls=CustomEncoder)
 
-            openDB().then(db => {
-                const transaction = db.transaction([storeName], "readwrite");
-                const store = transaction.objectStore(storeName);
+# Streamlit app
+def main():
+    st.title("Stock Data Viewer")
 
-                stockData.forEach((data, index) => {
-                    data.id = `${data.symbol}_${index}`; // Add a unique ID for each record
-                    const request = store.put(data);
-                    request.onsuccess = () => {
-                        console.log(`Data saved: ${data.id}`);
-                        document.getElementById("status").innerText = "Data downloaded and saved successfully.";
-                    };
-                    request.onerror = () => {
-                        console.error(`Error saving data: ${data.id}`);
-                        document.getElementById("status").innerText = "Error saving data.";
-                    };
-                });
-            }).catch(error => {
-                console.error("Error:", error);
-                document.getElementById("status").innerText = error;
-            });
-        }
+    # Load stock data
+    stock_data = load_stock_data()
 
-        function viewData() {
-            console.log("View Data button clicked.");
-            openDB().then(db => {
-                const transaction = db.transaction([storeName], "readonly");
-                const store = transaction.objectStore(storeName);
-                const request = store.getAll();
+    # Clean and serialize the data
+    serialized_data = clean_and_serialize_stock_data(stock_data)
 
-                request.onsuccess = () => {
-                    console.log("Data retrieved:", request.result);
-                    document.getElementById("output").innerText = JSON.stringify(request.result, null, 2);
-                };
+    # Display the stock data
+    st.write("### Stock Data")
+    st.json(serialized_data)
 
-                request.onerror = () => {
-                    console.error("Error reading data.");
-                    document.getElementById("output").innerText = "Error reading data.";
-                };
-            }).catch(error => {
-                console.error("Error:", error);
-                document.getElementById("status").innerText = error;
-            });
-        }
+    # Download button
+    st.write("### Download Data")
+    if st.button("Download JSON"):
+        st.download_button(
+            label="Download Stock Data as JSON",
+            data=serialized_data,
+            file_name="stock_data.json",
+            mime="application/json"
+        )
 
-        function deleteData() {
-            console.log("Delete Data button clicked.");
-            const request = indexedDB.deleteDatabase(dbName);
+    # Delete button (example functionality)
+    st.write("### Delete Data")
+    if st.button("Delete Data"):
+        st.warning("Data deletion functionality not implemented yet.")
 
-            request.onsuccess = () => {
-                console.log("Database deleted successfully.");
-                document.getElementById("status").innerText = "Database deleted successfully.";
-                document.getElementById("output").innerText = "";
-            };
-
-            request.onerror = () => {
-                console.error("Error deleting database.");
-                document.getElementById("status").innerText = "Error deleting database.";
-            };
-        }
-    </script>
-</body>
-</html>
-"""
-
-# Fetch stock data for Apple, Google, and Microsoft
-tickers = ["AAPL", "GOOGL", "MSFT"]
-stock_data = []
-for ticker in tickers:
-    data = fetch_stock_data(ticker)
-    for entry in data:
-        entry["symbol"] = ticker  # Add symbol to each entry
-    stock_data.extend(data)
-
-# Debug: Print stock data to the terminal
-print("Stock Data:", json.dumps(stock_data, indent=2))
-
-# Display the HTML in the Streamlit app
-st.components.v1.html(html_code.replace("{{ stock_data | tojson | safe }}", json.dumps(stock_data)), height=600)
+# Run the app
+if __name__ == "__main__":
+    main()
