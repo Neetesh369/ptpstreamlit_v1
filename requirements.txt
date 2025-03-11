@@ -6,3 +6,4 @@ google-auth-httplib2
 numpy
 pandas
 matplotlib
+yfinance
