@@ -43,22 +43,27 @@ html_code = """
                     db = event.target.result;
                     if (!db.objectStoreNames.contains(storeName)) {
                         db.createObjectStore(storeName, { keyPath: "id" });
+                        console.log("Database created and store initialized.");
                     }
                 };
 
                 request.onsuccess = function(event) {
                     db = event.target.result;
+                    console.log("Database opened successfully.");
                     resolve(db);
                 };
 
                 request.onerror = function(event) {
+                    console.error("Error opening database:", event.target.error);
                     reject("Error opening database.");
                 };
             });
         }
 
         function downloadData() {
+            console.log("Download Data button clicked.");
             const stockData = JSON.parse('{{ stock_data | tojson | safe }}');
+            console.log("Stock data received:", stockData);
 
             openDB().then(db => {
                 const transaction = db.transaction([storeName], "readwrite");
@@ -68,44 +73,54 @@ html_code = """
                     data.id = `${data.symbol}_${index}`; // Add a unique ID for each record
                     const request = store.put(data);
                     request.onsuccess = () => {
+                        console.log(`Data saved: ${data.id}`);
                         document.getElementById("status").innerText = "Data downloaded and saved successfully.";
                     };
                     request.onerror = () => {
+                        console.error(`Error saving data: ${data.id}`);
                         document.getElementById("status").innerText = "Error saving data.";
                     };
                 });
             }).catch(error => {
+                console.error("Error:", error);
                 document.getElementById("status").innerText = error;
             });
         }
 
         function viewData() {
+            console.log("View Data button clicked.");
             openDB().then(db => {
                 const transaction = db.transaction([storeName], "readonly");
                 const store = transaction.objectStore(storeName);
                 const request = store.getAll();
 
                 request.onsuccess = () => {
+                    console.log("Data retrieved:", request.result);
                     document.getElementById("output").innerText = JSON.stringify(request.result, null, 2);
                 };
 
                 request.onerror = () => {
+                    console.error("Error reading data.");
                     document.getElementById("output").innerText = "Error reading data.";
                 };
             }).catch(error => {
+                console.error("Error:", error);
                 document.getElementById("status").innerText = error;
             });
         }
 
         function deleteData() {
+            console.log("Delete Data button clicked.");
             const request = indexedDB.deleteDatabase(dbName);
 
             request.onsuccess = () => {
+                console.log("Database deleted successfully.");
                 document.getElementById("status").innerText = "Database deleted successfully.";
                 document.getElementById("output").innerText = "";
             };
 
             request.onerror = () => {
+                console.error("Error deleting database.");
                 document.getElementById("status").innerText = "Error deleting database.";
             };
         }
@@ -122,6 +137,9 @@ for ticker in tickers:
     for entry in data:
         entry["symbol"] = ticker  # Add symbol to each entry
     stock_data.extend(data)
+
+# Debug: Print stock data to the terminal
+print("Stock Data:", json.dumps(stock_data, indent=2))
 
 # Display the HTML in the Streamlit app
 st.components.v1.html(html_code.replace("{{ stock_data | tojson | safe }}", json.dumps(stock_data)), height=600)
