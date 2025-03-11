@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import json
+from datetime import datetime
 
 # Title of the app
 st.title("Stock Price Database with IndexedDB")
@@ -9,7 +10,10 @@ st.title("Stock Price Database with IndexedDB")
 def fetch_stock_data(ticker):
     stock = yf.Ticker(ticker)
     data = stock.history(period="1mo")  # Fetch 1 month of historical data
-    return data.reset_index().to_dict(orient="records")  # Convert to list of dictionaries
+    # Convert DataFrame to a list of dictionaries and serialize dates
+    data = data.reset_index()
+    data["Date"] = data["Date"].dt.strftime("%Y-%m-%d")  # Convert Timestamp to string
+    return data.to_dict(orient="records")  # Convert to list of dictionaries
 
 # HTML and JavaScript to interact with IndexedDB
 html_code = """
@@ -38,7 +42,7 @@ html_code = """
                 request.onupgradeneeded = function(event) {
                     db = event.target.result;
                     if (!db.objectStoreNames.contains(storeName)) {
-                        db.createObjectStore(storeName, { keyPath: "symbol" });
+                        db.createObjectStore(storeName, { keyPath: "id" });
                     }
                 };
 
@@ -60,7 +64,8 @@ html_code = """
                 const transaction = db.transaction([storeName], "readwrite");
                 const store = transaction.objectStore(storeName);
 
-                stockData.forEach(data => {
+                stockData.forEach((data, index) => {
+                    data.id = `${data.symbol}_${index}`; // Add a unique ID for each record
                     const request = store.put(data);
                     request.onsuccess = () => {
                         document.getElementById("status").innerText = "Data downloaded and saved successfully.";
