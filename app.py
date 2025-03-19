@@ -4,7 +4,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from urllib.parse import urlparse, parse_qs
+import uuid
 
 # If modifying these SCOPES, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly']
@@ -19,7 +19,7 @@ if 'tokens' not in st.session_state:
 def authenticate_google():
     """Authenticate the user using Google OAuth and return credentials."""
     # Get the session ID (unique for each user)
-    session_id = st.experimental_get_query_params().get('session_id', [None])[0]
+    session_id = st.query_params.get('session_id', None)
     if not session_id:
         st.error("Session ID not found. Please reload the page.")
         return None
@@ -54,9 +54,9 @@ def authenticate_google():
     st.write("After authorization, you will be redirected back to this app.")
 
     # Check if the authorization code is in the URL
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     if 'code' in query_params:
-        auth_code = query_params['code'][0]
+        auth_code = query_params['code']
         flow.fetch_token(code=auth_code)
         creds = flow.credentials
         # Store tokens in session state
@@ -93,7 +93,7 @@ def list_google_drive_folders(creds):
 
 def logout():
     """Clear the session state and log out the user."""
-    session_id = st.experimental_get_query_params().get('session_id', [None])[0]
+    session_id = st.query_params.get('session_id', None)
     if session_id and session_id in st.session_state['tokens']:
         del st.session_state['tokens'][session_id]
     st.success("Logged out successfully!")
@@ -102,11 +102,10 @@ def main():
     st.title("Google Drive Folder Viewer")
 
     # Generate a unique session ID
-    session_id = st.experimental_get_query_params().get('session_id', [None])[0]
+    session_id = st.query_params.get('session_id', None)
     if not session_id:
-        import uuid
         session_id = str(uuid.uuid4())
-        st.experimental_set_query_params(session_id=session_id)
+        st.query_params['session_id'] = session_id
 
     if st.button("Login with Google"):
         creds = authenticate_google()
