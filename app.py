@@ -34,7 +34,7 @@ def authenticate_google():
             st.write("After authorization, you will be redirected back to this app.")
 
             # Check if the authorization code is in the URL
-            query_params = st.experimental_get_query_params()
+            query_params = st.query_params()
             if 'code' in query_params:
                 auth_code = query_params['code'][0]
                 st.write(f"Authorization code: {auth_code}")  # Debugging output
