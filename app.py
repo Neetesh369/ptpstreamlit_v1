@@ -18,8 +18,10 @@ def authenticate_google():
     if 'creds' in st.session_state and st.session_state.creds:
         creds = Credentials.from_authorized_user_info(st.session_state.creds, SCOPES)
         if creds and creds.valid:
+            st.write("Using existing valid credentials from session state.")  # Debugging output
             return creds
         if creds and creds.expired and creds.refresh_token:
+            st.write("Refreshing expired credentials.")  # Debugging output
             creds.refresh(Request())
             st.session_state.creds = creds.to_json()
             return creds
