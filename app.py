@@ -86,11 +86,11 @@ def main():
     # Login/Logout buttons
     if st.session_state.google_creds is None:
         if st.button("Login with Google"):
-            st.experimental_rerun()
+            st.rerun()  # Use st.rerun() instead of st.experimental_rerun()
     else:
         if st.button("Logout"):
             logout()
-            st.experimental_rerun()
+            st.rerun()  # Use st.rerun() instead of st.experimental_rerun()
 
     # Authenticate and list folders
     if st.session_state.google_creds is not None:
