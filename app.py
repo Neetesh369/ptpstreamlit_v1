@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -20,11 +21,11 @@ def authenticate_google():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            if 'credentials' not in st.secrets:
-                st.error("Error: Google OAuth credentials are missing. Please set up Streamlit Secrets.")
+            if not os.path.exists('credentials.json'):
+                st.error("Error: 'credentials.json' file is missing. Please set up Google OAuth credentials.")
                 return None
-            flow = InstalledAppFlow.from_client_config(
-                st.secrets['credentials'], SCOPES, redirect_uri=REDIRECT_URI)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'credentials.json', SCOPES, redirect_uri=REDIRECT_URI)
             # Generate the authorization URL
             auth_url, _ = flow.authorization_url(prompt='consent')
             st.write("Please go to the following URL to authorize the application:")
