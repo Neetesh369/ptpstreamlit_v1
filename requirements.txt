@@ -7,3 +7,4 @@ numpy
 pandas
 matplotlib
 yfinance
+google-api-python-client
