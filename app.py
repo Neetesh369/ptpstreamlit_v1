@@ -34,16 +34,13 @@ def authenticate_google():
             st.write("After authorization, you will be redirected back to this app.")
 
             # Check if the authorization code is in the URL
-            query_params = st.query_params()
+            query_params = st.experimental_get_query_params()
             if 'code' in query_params:
                 auth_code = query_params['code'][0]
-                st.write(f"Authorization code: {auth_code}")  # Debugging output
                 flow.fetch_token(code=auth_code)
                 creds = flow.credentials
                 # Store credentials in session state
                 st.session_state['creds'] = creds
-													  
-												
                 st.success("Logged in successfully!")
             else:
                 st.warning("Waiting for authorization code...")
