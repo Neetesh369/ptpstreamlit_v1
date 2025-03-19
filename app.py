@@ -1,90 +1,77 @@
 import streamlit as st
-import pandas as pd
-import json
-import math
-from datetime import datetime
+import os
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from urllib.parse import urlparse, parse_qs
 
-# Custom JSON encoder to handle Timestamp and NaN values
-class CustomEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, pd.Timestamp):
-            return obj.strftime('%Y-%m-%d')
-        elif isinstance(obj, float) and math.isnan(obj):
-            return None
-        return super().default(obj)
+# If modifying these SCOPES, delete the file token.json.
+SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly']
 
-# Sample stock data (replace this with your actual data loading logic)
-def load_stock_data():
-    # Example stock data with Timestamp and NaN values
-    stock_data = [
-        {
-            "Date": pd.Timestamp("2025-02-10"),
-            "Close": float('nan'),
-            "High": float('nan'),
-            "Low": float('nan'),
-            "Open": float('nan'),
-            "Volume": 0,
-            "Dividends": 0.25,
-            "Stock Splits": 0.0,
-            "symbol": "AAPL"
-        },
-        {
-            "Date": pd.Timestamp("2025-02-11"),
-            "Close": 232.62,
-            "High": 235.23,
-            "Low": 228.13,
-            "Open": 228.20,
-            "Volume": 53718400,
-            "Dividends": 0.0,
-            "Stock Splits": 0.0,
-            "symbol": "AAPL"
-        }
-    ]
-    return stock_data
+# Define the redirect URI (must match the one in Google Cloud Console)
+REDIRECT_URI = 'https://ptpapp-qjxrob2c9ydjxeroncdq9z.streamlit.app/'
 
-# Function to clean and serialize stock data
-def clean_and_serialize_stock_data(stock_data):
-    cleaned_data = []
-    for entry in stock_data:
-        cleaned_entry = {}
-        for key, value in entry.items():
-            if isinstance(value, pd.Timestamp):
-                cleaned_entry[key] = value.strftime('%Y-%m-%d')
-            elif isinstance(value, float) and math.isnan(value):
-                cleaned_entry[key] = None
+def authenticate_google():
+    """Authenticate the user using Google OAuth and return credentials."""
+    creds = None
+    if os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            if not os.path.exists('credentials.json'):
+                st.error("Error: 'credentials.json' file is missing. Please set up Google OAuth credentials.")
+                return None
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'credentials.json', SCOPES, redirect_uri=REDIRECT_URI)
+            # Generate the authorization URL
+            auth_url, _ = flow.authorization_url(prompt='consent')
+            st.write("Please go to the following URL to authorize the application:")
+            st.write(auth_url)
+            st.write("After authorization, you will be redirected back to this app.")
+
+            # Check if the authorization code is in the URL
+            query_params = st.experimental_get_query_params()
+            if 'code' in query_params:
+                auth_code = query_params['code'][0]
+                st.write(f"Authorization code: {auth_code}")  # Debugging output
+                flow.fetch_token(code=auth_code)
+                creds = flow.credentials
+                st.write(f"Access token: {creds.token}")  # Debugging output
+                st.write(f"Refresh token: {creds.refresh_token}")  # Debugging output
+                with open('token.json', 'w') as token:
+                    token.write(creds.to_json())
+                st.success("Logged in successfully!")
             else:
-                cleaned_entry[key] = value
-        cleaned_data.append(cleaned_entry)
-    return json.dumps(cleaned_data, cls=CustomEncoder)
+                st.warning("Waiting for authorization code...")
+                return None
+    return creds
 
-# Streamlit app
+def list_google_drive_folders(creds):
+    """List the user's Google Drive folders."""
+    try:
+        service = build('drive', 'v3', credentials=creds)
+        results = service.files().list(
+            q="mimeType='application/vnd.google-apps.folder'",
+            pageSize=10, fields="nextPageToken, files(id, name)").execute()
+        items = results.get('files', [])
+        if not items:
+            st.write('No folders found.')
+        else:
+            st.write('Folders:')
+            for item in items:
+                st.write(f"{item['name']} ({item['id']})")
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
+
 def main():
-    st.title("Stock Data Viewer")
+    st.title("Google Drive Folder Viewer")
+    if st.button("Login with Google"):
+        creds = authenticate_google()
+        if creds:
+            list_google_drive_folders(creds)
 
-    # Load stock data
-    stock_data = load_stock_data()
-
-    # Clean and serialize the data
-    serialized_data = clean_and_serialize_stock_data(stock_data)
-
-    # Display the stock data
-    st.write("### Stock Data")
-    st.json(serialized_data)
-
-    # Download button
-    st.write("### Download Data")
-    st.download_button(
-        label="Download Stock Data as JSON",
-        data=serialized_data,
-        file_name="stock_data.json",
-        mime="application/json"
-    )
-
-    # Delete button (example functionality)
-    st.write("### Delete Data")
-    if st.button("Delete Data"):
-        st.warning("Data deletion functionality not implemented yet.")
-
-# Run the app
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
