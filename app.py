@@ -94,7 +94,7 @@ def list_google_drive_folders(creds):
         nsetest_folder_id = folders[0]['id']
         
         # Find the CSV files in the 'nsetest' folder
-        file_query = f"'{nsetest_folder_id}' in parents and (name='A2ZINFRA.NS_historical_data.csv' or name='AARTIIND.NS.csv')"
+        file_query = f"'{nsetest_folder_id}' in parents and (name='A2ZINFRA.NS_historical_data.csv' or name='AARTIIND.NS_historical_data.csv')"
         file_results = service.files().list(q=file_query, fields="files(id, name)").execute()
         files = file_results.get('files', [])
         
@@ -132,7 +132,7 @@ def list_google_drive_folders(creds):
         # Extract Date and Close columns
         try:
             a2zinfra_df = dataframes['A2ZINFRA.NS_historical_data.csv'][['Date', 'Close']]
-            aartiind_df = dataframes['AARTIIND.NS.csv'][['Date', 'Close']]
+            aartiind_df = dataframes['AARTIIND.NS_historical_data.csv'][['Date', 'Close']]
             st.write("Debug: Successfully extracted 'Date' and 'Close' columns.")
         except KeyError as e:
             st.error(f"Error extracting columns: {e}. Ensure the CSV files have 'Date' and 'Close' columns.")
