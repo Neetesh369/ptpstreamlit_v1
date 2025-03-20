@@ -1,9 +1,12 @@
 import streamlit as st
 import os
+import pandas as pd
+import io
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
 import uuid
 
 # If modifying these SCOPES, delete the file token.json.
@@ -75,7 +78,7 @@ def authenticate_google():
         return None
 
 def list_google_drive_folders(creds):
-    """List the files within the 'nsetest' folder in Google Drive."""
+    """Read and compare stock price data from CSV files in the 'nsetest' folder."""
     try:
         service = build('drive', 'v3', credentials=creds)
         
@@ -90,17 +93,46 @@ def list_google_drive_folders(creds):
         
         nsetest_folder_id = folders[0]['id']
         
-        # List files within the 'nsetest' folder
-        file_query = f"'{nsetest_folder_id}' in parents"
+        # Find the CSV files in the 'nsetest' folder
+        file_query = f"'{nsetest_folder_id}' in parents and (name='A2ZINFRA.NS_historical_data.csv' or name='AARTIIND.NS.csv')"
         file_results = service.files().list(q=file_query, fields="files(id, name)").execute()
         files = file_results.get('files', [])
         
-        if not files:
-            st.write('No files found in the "nsetest" folder.')
-        else:
-            st.write('Files in "nsetest":')
-            for file in files:
-                st.write(f"{file['name']} ({file['id']})")
+        if len(files) != 2:
+            st.write("Required CSV files not found in the 'nsetest' folder.")
+            return
+        
+        # Download and read the CSV files
+        dataframes = {}
+        for file in files:
+            file_id = file['id']
+            request = service.files().get_media(fileId=file_id)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+            fh.seek(0)
+            df = pd.read_csv(fh)
+            dataframes[file['name']] = df
+        
+        # Extract Date and Close columns
+        a2zinfra_df = dataframes['A2ZINFRA.NS_historical_data.csv'][['Date', 'Close']]
+        aartiind_df = dataframes['AARTIIND.NS.csv'][['Date', 'Close']]
+        
+        # Merge the data on Date
+        comparison_df = pd.merge(a2zinfra_df, aartiind_df, on='Date', suffixes=('_A2ZINFRA', '_AARTIIND'))
+        
+        # Rename columns for clarity
+        comparison_df.rename(columns={
+            'Close_A2ZINFRA': 'A2ZINFRA',
+            'Close_AARTIIND': 'AARTIIND'
+        }, inplace=True)
+        
+        # Display the comparison table
+        st.write("Stock Price Comparison:")
+        st.dataframe(comparison_df)
+        
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
