@@ -116,12 +116,29 @@ def list_google_drive_folders(creds):
             df = pd.read_csv(fh)
             dataframes[file['name']] = df
         
+        # Debug: Print the raw data from the CSV files
+        st.write("Debug: Raw data from CSV files:")
+        for file_name, df in dataframes.items():
+            st.write(f"File: {file_name}")
+            st.write(df.head())  # Show the first 5 rows of each file
+        
         # Extract Date and Close columns
         a2zinfra_df = dataframes['A2ZINFRA.NS_historical_data.csv'][['Date', 'Close']]
         aartiind_df = dataframes['AARTIIND.NS.csv'][['Date', 'Close']]
         
+        # Debug: Print the extracted columns
+        st.write("Debug: Extracted columns:")
+        st.write("A2ZINFRA Data:")
+        st.write(a2zinfra_df.head())
+        st.write("AARTIIND Data:")
+        st.write(aartiind_df.head())
+        
         # Merge the data on Date
         comparison_df = pd.merge(a2zinfra_df, aartiind_df, on='Date', suffixes=('_A2ZINFRA', '_AARTIIND'))
+        
+        # Debug: Print the merged DataFrame
+        st.write("Debug: Merged DataFrame:")
+        st.write(comparison_df.head())
         
         # Rename columns for clarity
         comparison_df.rename(columns={
