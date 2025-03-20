@@ -15,7 +15,7 @@ import time
 SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly', 'https://www.googleapis.com/auth/drive.readonly']
 
 # Define the redirect URI (must match the one in Google Cloud Console)
-REDIRECT_URI = 'https://c6f7-34-75-61-193.ngrok-free.app/'
+REDIRECT_URI = 'https://ptpapp-qjxrob2c9ydjxeroncdq9z.streamlit.app/'
 
 # Initialize session state for data_folder and credentials
 if 'data_folder' not in st.session_state:
