@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import pandas as pd
 import io
+import numpy as np
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -76,6 +77,22 @@ def authenticate_google():
     else:
         st.warning("Waiting for authorization code...")
         return None
+
+def calculate_zscore(series, window=50):
+    """Calculate the Z-score for a given series using a rolling window."""
+    rolling_mean = series.rolling(window=window).mean()
+    rolling_std = series.rolling(window=window).std()
+    zscore = (series - rolling_mean) / rolling_std
+    return zscore
+
+def calculate_rsi(series, window=14):
+    """Calculate the Relative Strength Index (RSI) for a given series using a rolling window."""
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 def list_google_drive_folders(creds):
     """Read and compare stock price data from CSV files in the 'nsetest' folder."""
@@ -162,6 +179,15 @@ def list_google_drive_folders(creds):
             'Close_A2ZINFRA': 'A2ZINFRA',
             'Close_AARTIIND': 'AARTIIND'
         }, inplace=True)
+        
+        # Calculate Ratio
+        comparison_df['Ratio'] = comparison_df['A2ZINFRA'] / comparison_df['AARTIIND']
+        
+        # Calculate Z-Score of Ratio (50-day lookback)
+        comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=50)
+        
+        # Calculate RSI of Ratio (14-period lookback)
+        comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=14)
         
         # Sort by Date (most recent first) and limit to 300 rows
         comparison_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
