@@ -75,19 +75,32 @@ def authenticate_google():
         return None
 
 def list_google_drive_folders(creds):
-    """List the user's Google Drive folders."""
+    """List the files within the 'nsetest' folder in Google Drive."""
     try:
         service = build('drive', 'v3', credentials=creds)
-        results = service.files().list(
-            q="mimeType='application/vnd.google-apps.folder'",
-            pageSize=10, fields="nextPageToken, files(id, name)").execute()
-        items = results.get('files', [])
-        if not items:
-            st.write('No folders found.')
+        
+        # Find the folder ID of 'nsetest'
+        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetest'"
+        folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
+        folders = folder_results.get('files', [])
+        
+        if not folders:
+            st.write("Folder 'nsetest' not found.")
+            return
+        
+        nsetest_folder_id = folders[0]['id']
+        
+        # List files within the 'nsetest' folder
+        file_query = f"'{nsetest_folder_id}' in parents"
+        file_results = service.files().list(q=file_query, fields="files(id, name)").execute()
+        files = file_results.get('files', [])
+        
+        if not files:
+            st.write('No files found in the "nsetest" folder.')
         else:
-            st.write('Folders:')
-            for item in items:
-                st.write(f"{item['name']} ({item['id']})")
+            st.write('Files in "nsetest":')
+            for file in files:
+                st.write(f"{file['name']} ({file['id']})")
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
