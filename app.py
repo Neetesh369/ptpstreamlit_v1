@@ -105,16 +105,21 @@ def list_google_drive_folders(creds):
         # Download and read the CSV files
         dataframes = {}
         for file in files:
-            file_id = file['id']
-            request = service.files().get_media(fileId=file_id)
-            fh = io.BytesIO()
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done:
-                status, done = downloader.next_chunk()
-            fh.seek(0)
-            df = pd.read_csv(fh)
-            dataframes[file['name']] = df
+            try:
+                file_id = file['id']
+                request = service.files().get_media(fileId=file_id)
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+                fh.seek(0)
+                df = pd.read_csv(fh)
+                dataframes[file['name']] = df
+                st.write(f"Debug: Successfully read {file['name']} with {len(df)} rows.")
+            except Exception as e:
+                st.error(f"Error reading {file['name']}: {e}")
+                return
         
         # Debug: Print the raw data from the CSV files
         st.write("Debug: Raw data from CSV files:")
@@ -123,8 +128,13 @@ def list_google_drive_folders(creds):
             st.write(df.head())  # Show the first 5 rows of each file
         
         # Extract Date and Close columns
-        a2zinfra_df = dataframes['A2ZINFRA.NS_historical_data.csv'][['Date', 'Close']]
-        aartiind_df = dataframes['AARTIIND.NS.csv'][['Date', 'Close']]
+        try:
+            a2zinfra_df = dataframes['A2ZINFRA.NS_historical_data.csv'][['Date', 'Close']]
+            aartiind_df = dataframes['AARTIIND.NS.csv'][['Date', 'Close']]
+            st.write("Debug: Successfully extracted 'Date' and 'Close' columns.")
+        except KeyError as e:
+            st.error(f"Error extracting columns: {e}. Ensure the CSV files have 'Date' and 'Close' columns.")
+            return
         
         # Debug: Print the extracted columns
         st.write("Debug: Extracted columns:")
@@ -134,7 +144,12 @@ def list_google_drive_folders(creds):
         st.write(aartiind_df.head())
         
         # Merge the data on Date
-        comparison_df = pd.merge(a2zinfra_df, aartiind_df, on='Date', suffixes=('_A2ZINFRA', '_AARTIIND'))
+        try:
+            comparison_df = pd.merge(a2zinfra_df, aartiind_df, on='Date', suffixes=('_A2ZINFRA', '_AARTIIND'))
+            st.write("Debug: Successfully merged DataFrames.")
+        except Exception as e:
+            st.error(f"Error merging DataFrames: {e}")
+            return
         
         # Debug: Print the merged DataFrame
         st.write("Debug: Merged DataFrame:")
