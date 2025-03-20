@@ -10,7 +10,6 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import io
 import time
-import uuid
 
 # If modifying these SCOPES, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly', 'https://www.googleapis.com/auth/drive.readonly']
@@ -18,9 +17,7 @@ SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly', 'https://ww
 # Define the redirect URI (must match the one in Google Cloud Console)
 REDIRECT_URI = 'https://ptpapp-qjxrob2c9ydjxeroncdq9z.streamlit.app/'
 
-# Initialize session state for data_folder and credentials
-if 'data_folder' not in st.session_state:
-    st.session_state.data_folder = None
+# Initialize session state for credentials
 if 'creds' not in st.session_state:
     st.session_state.creds = None
 
@@ -38,19 +35,23 @@ def authenticate_google():
                 return None
             flow = InstalledAppFlow.from_client_secrets_file(
                 'credentials.json', SCOPES, redirect_uri=REDIRECT_URI)
-            auth_url, _ = flow.authorization_url(prompt='consent')
-            st.write("Please go to the following URL to authorize the application:")
-            st.write(auth_url)
-            st.write("After authorization, enter the code you receive below:")
-            auth_code = st.text_input("Enter the authorization code:")
-            if auth_code:
+            # Check if the authorization code is in the URL
+            query_params = st.query_params
+            if 'code' in query_params:
+                auth_code = query_params['code']
                 flow.fetch_token(code=auth_code)
                 creds = flow.credentials
                 with open('token.json', 'w') as token:
                     token.write(creds.to_json())
+                st.session_state.creds = creds
                 st.success("Logged in successfully!")
+                return creds
             else:
-                st.warning("Waiting for authorization code...")
+                # Start the OAuth flow
+                auth_url, _ = flow.authorization_url(prompt='consent')
+                st.write("Please go to the following URL to authorize the application:")
+                st.write(auth_url)
+                st.write("After authorization, you will be redirected back to this app.")
                 return None
     st.session_state.creds = creds
     return creds
