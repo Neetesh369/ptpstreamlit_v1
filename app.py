@@ -183,18 +183,25 @@ def list_google_drive_folders(creds):
         # Calculate Ratio
         comparison_df['Ratio'] = comparison_df['A2ZINFRA'] / comparison_df['AARTIIND']
         
-        # Calculate Z-Score of Ratio (50-day lookback)
-        comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=50)
+        # Add input boxes for Z-Score lookback and RSI period
+        st.write("### Adjust Parameters")
+        zscore_lookback = st.number_input("Z-Score Lookback Period (days)", min_value=1, value=50)
+        rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14)
         
-        # Calculate RSI of Ratio (14-period lookback)
-        comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=14)
-        
-        # Sort by Date (most recent first) and limit to 300 rows
-        comparison_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
-        
-        # Display the comparison table
-        st.write("Stock Price Comparison (Last 300 Rows):")
-        st.dataframe(comparison_df)
+        # Add a "Go" button
+        if st.button("Go"):
+            # Calculate Z-Score of Ratio
+            comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=zscore_lookback)
+            
+            # Calculate RSI of Ratio
+            comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
+            
+            # Sort by Date (most recent first) and limit to 300 rows
+            comparison_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
+            
+            # Display the comparison table
+            st.write("### Stock Price Comparison (Last 300 Rows)")
+            st.dataframe(comparison_df)
         
     except Exception as e:
         st.error(f"An error occurred: {e}")
