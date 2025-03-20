@@ -114,7 +114,9 @@ def list_google_drive_folders(creds):
                 while not done:
                     status, done = downloader.next_chunk()
                 fh.seek(0)
-                df = pd.read_csv(fh)
+                
+                # Read the CSV file with explicit delimiter and error handling
+                df = pd.read_csv(fh, delimiter=',', encoding='utf-8')
                 dataframes[file['name']] = df
                 st.write(f"Debug: Successfully read {file['name']} with {len(df)} rows.")
             except Exception as e:
@@ -145,7 +147,7 @@ def list_google_drive_folders(creds):
         
         # Merge the data on Date
         try:
-            comparison_df = pd.merge(a2zinfra_df, aartiind_df, on='Date', suffixes=('_A2ZINFRA', '_AARTIIND'))
+            comparison_df = pd.merge(a2zinfra_df, aartiind_df, on='Date', how='outer', suffixes=('_A2ZINFRA', '_AARTIIND'))
             st.write("Debug: Successfully merged DataFrames.")
         except Exception as e:
             st.error(f"Error merging DataFrames: {e}")
