@@ -129,8 +129,11 @@ def list_google_drive_folders(creds):
             'Close_AARTIIND': 'AARTIIND'
         }, inplace=True)
         
+        # Sort by Date (most recent first) and limit to 300 rows
+        comparison_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
+        
         # Display the comparison table
-        st.write("Stock Price Comparison:")
+        st.write("Stock Price Comparison (Last 300 Rows):")
         st.dataframe(comparison_df)
         
     except Exception as e:
