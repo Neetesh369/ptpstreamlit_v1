@@ -10,7 +10,7 @@ from googleapiclient.http import MediaIoBaseDownload
 import uuid
 
 # If modifying these SCOPES, delete the file token.json.
-SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly']
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 # Define the redirect URI (must match the one in Google Cloud Console)
 REDIRECT_URI = 'https://ptpapp-qjxrob2c9ydjxeroncdq9z.streamlit.app/'
