@@ -19,8 +19,11 @@ def authenticate_google():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'credentials.json', SCOPES
+            )
+            # Use the console-based flow instead of opening a browser
+            creds = flow.run_console()
         st.session_state['creds'] = {
             'token': creds.token,
             'refresh_token': creds.refresh_token,
