@@ -97,8 +97,13 @@ def calculate_rsi(series, window=14):
 def list_google_drive_folders(creds):
     """Read and compare stock price data from CSV files in the 'nsetest' folder."""
     try:
-        # Check if the merged DataFrame is already in session_state
+        # Initialize session state for the merged DataFrame
         if 'comparison_df' not in st.session_state:
+            st.session_state['comparison_df'] = None
+        
+        # Check if the merged DataFrame is already loaded
+        if st.session_state['comparison_df'] is None:
+            st.write("Loading data from Google Drive...")
             service = build('drive', 'v3', credentials=creds)
             
             # Find the folder ID of 'nsetest'
@@ -187,6 +192,7 @@ def list_google_drive_folders(creds):
             
             # Store the merged DataFrame in session_state
             st.session_state['comparison_df'] = comparison_df
+            st.write("Debug: Data loaded and stored in session state.")
         
         # Retrieve the merged DataFrame from session_state
         comparison_df = st.session_state['comparison_df']
@@ -213,7 +219,7 @@ def list_google_drive_folders(creds):
         
     except Exception as e:
         st.error(f"An error occurred: {e}")
-
+        
 def logout():
     """Clear the session state and log out the user."""
     session_id = st.query_params.get('session_id', None)
