@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
+import uuid  # Import uuid to generate unique session IDs
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -35,11 +36,12 @@ def authenticate_google():
     if 'tokens' not in st.session_state:
         st.session_state['tokens'] = {}
 
-    # Get the session ID (unique for each user)
-    session_id = st.query_params.get('session_id', None)
-    if not session_id:
-        st.error("Session ID not found. Please reload the page.")
-        return None
+    # Generate or retrieve the session ID
+    if 'session_id' not in st.session_state:
+        st.session_state['session_id'] = str(uuid.uuid4())
+        st.query_params['session_id'] = st.session_state['session_id']
+    
+    session_id = st.session_state['session_id']
 
     # Check if tokens exist for this session
     if session_id in st.session_state['tokens']:
