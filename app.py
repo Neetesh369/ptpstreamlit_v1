@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import os  # Import the os module
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -55,7 +56,7 @@ def authenticate_google():
             return creds
 
     # If no valid tokens, start the OAuth flow
-    if not os.path.exists('credentials.json'):
+    if not os.path.exists('credentials.json'):  # Now this will work
         st.error("Error: 'credentials.json' file is missing. Please set up Google OAuth credentials.")
         return None
 
