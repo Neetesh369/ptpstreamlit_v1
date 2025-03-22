@@ -97,119 +97,54 @@ def calculate_rsi(series, window=14):
 def list_google_drive_folders(creds):
     """Read and compare stock price data from CSV files in the 'nsetest' folder."""
     try:
-        # Check if the merged DataFrame is already in session_state
-        if 'comparison_df' not in st.session_state:
-            service = build('drive', 'v3', credentials=creds)
-            
-            # Find the folder ID of 'nsetest'
-            folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetest'"
-            folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
-            folders = folder_results.get('files', [])
-            
-            if not folders:
-                st.write("Folder 'nsetest' not found.")
-                return
-            
-            nsetest_folder_id = folders[0]['id']
-            
-            # Find the CSV files in the 'nsetest' folder
-            file_query = f"'{nsetest_folder_id}' in parents and (name='A2ZINFRA.NS_historical_data.csv' or name='AARTIIND.NS_historical_data.csv')"
-            file_results = service.files().list(q=file_query, fields="files(id, name)").execute()
-            files = file_results.get('files', [])
-            
-            if len(files) != 2:
-                st.write("Required CSV files not found in the 'nsetest' folder.")
-                return
-            
-            # Download and read the CSV files
-            dataframes = {}
-            for file in files:
-                try:
-                    file_id = file['id']
-                    request = service.files().get_media(fileId=file_id)
-                    fh = io.BytesIO()
-                    downloader = MediaIoBaseDownload(fh, request)
-                    done = False
-                    while not done:
-                        status, done = downloader.next_chunk()
-                    fh.seek(0)
-                    
-                    # Read the CSV file with explicit delimiter and error handling
-                    df = pd.read_csv(fh, delimiter=',', encoding='utf-8')
-                    dataframes[file['name']] = df
-                    st.write(f"Debug: Successfully read {file['name']} with {len(df)} rows.")
-                except Exception as e:
-                    st.error(f"Error reading {file['name']}: {e}")
-                    return
-            
-            # Debug: Print the raw data from the CSV files
-            st.write("Debug: Raw data from CSV files:")
-            for file_name, df in dataframes.items():
-                st.write(f"File: {file_name}")
-                st.write(df.head())  # Show the first 5 rows of each file
-            
-            # Extract Date and Close columns
+        service = build('drive', 'v3', credentials=creds)
+        
+        # Find the folder ID of 'nsetest'
+        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetest'"
+        folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
+        folders = folder_results.get('files', [])
+        
+        if not folders:
+            st.write("Folder 'nsetest' not found.")
+            return
+        
+        nsetest_folder_id = folders[0]['id']
+        
+        # Find all CSV files in the 'nsetest' folder
+        file_query = f"'{nsetest_folder_id}' in parents and mimeType='text/csv'"
+        file_results = service.files().list(q=file_query, fields="files(id, name)").execute()
+        files = file_results.get('files', [])
+        
+        if not files:
+            st.write("No CSV files found in the 'nsetest' folder.")
+            return
+        
+        # Store the list of CSV files in session_state
+        st.session_state['csv_files'] = [file['name'] for file in files]
+        
+        # Download and read the CSV files
+        dataframes = {}
+        for file in files:
             try:
-                a2zinfra_df = dataframes['A2ZINFRA.NS_historical_data.csv'][['Date', 'Close']]
-                aartiind_df = dataframes['AARTIIND.NS_historical_data.csv'][['Date', 'Close']]
-                st.write("Debug: Successfully extracted 'Date' and 'Close' columns.")
-            except KeyError as e:
-                st.error(f"Error extracting columns: {e}. Ensure the CSV files have 'Date' and 'Close' columns.")
-                return
-            
-            # Debug: Print the extracted columns
-            st.write("Debug: Extracted columns:")
-            st.write("A2ZINFRA Data:")
-            st.write(a2zinfra_df.head())
-            st.write("AARTIIND Data:")
-            st.write(aartiind_df.head())
-            
-            # Merge the data on Date
-            try:
-                comparison_df = pd.merge(a2zinfra_df, aartiind_df, on='Date', how='outer', suffixes=('_A2ZINFRA', '_AARTIIND'))
-                st.write("Debug: Successfully merged DataFrames.")
+                file_id = file['id']
+                request = service.files().get_media(fileId=file_id)
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+                fh.seek(0)
+                
+                # Read the CSV file with explicit delimiter and error handling
+                df = pd.read_csv(fh, delimiter=',', encoding='utf-8')
+                dataframes[file['name']] = df
+                st.write(f"Debug: Successfully read {file['name']} with {len(df)} rows.")
             except Exception as e:
-                st.error(f"Error merging DataFrames: {e}")
+                st.error(f"Error reading {file['name']}: {e}")
                 return
-            
-            # Debug: Print the merged DataFrame
-            st.write("Debug: Merged DataFrame:")
-            st.write(comparison_df.head())
-            
-            # Rename columns for clarity
-            comparison_df.rename(columns={
-                'Close_A2ZINFRA': 'A2ZINFRA',
-                'Close_AARTIIND': 'AARTIIND'
-            }, inplace=True)
-            
-            # Calculate Ratio
-            comparison_df['Ratio'] = comparison_df['A2ZINFRA'] / comparison_df['AARTIIND']
-            
-            # Store the merged DataFrame in session_state
-            st.session_state['comparison_df'] = comparison_df
         
-        # Retrieve the merged DataFrame from session_state
-        comparison_df = st.session_state['comparison_df']
-        
-        # Add input boxes for Z-Score lookback and RSI period
-        st.write("### Adjust Parameters")
-        zscore_lookback = st.number_input("Z-Score Lookback Period (days)", min_value=1, value=50)
-        rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14)
-        
-        # Add a "Go" button
-        if st.button("Go"):
-            # Calculate Z-Score of Ratio
-            comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=zscore_lookback)
-            
-            # Calculate RSI of Ratio
-            comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
-            
-            # Sort by Date (most recent first) and limit to 300 rows
-            comparison_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
-            
-            # Display the comparison table
-            st.write("### Stock Price Comparison (Last 300 Rows)")
-            st.dataframe(comparison_df)
+        # Store the dataframes in session_state
+        st.session_state['dataframes'] = dataframes
         
     except Exception as e:
         st.error(f"An error occurred: {e}")
@@ -218,13 +153,51 @@ def backtest_page():
     """Backtesting page to analyze stock data."""
     st.title("Backtesting Page")
     
-    # Check if the merged DataFrame is available in session_state
-    if 'comparison_df' not in st.session_state:
+    # Check if the CSV files and dataframes are available in session_state
+    if 'csv_files' not in st.session_state or 'dataframes' not in st.session_state:
         st.warning("Please load data from the Google Drive Viewer first.")
         return
     
-    # Retrieve the merged DataFrame from session_state
-    comparison_df = st.session_state['comparison_df']
+    # Retrieve the list of CSV files and dataframes from session_state
+    csv_files = st.session_state['csv_files']
+    dataframes = st.session_state['dataframes']
+    
+    # Add dropdowns to select two stocks
+    st.write("### Select Stocks")
+    stock1 = st.selectbox("Select Stock 1", csv_files)
+    stock2 = st.selectbox("Select Stock 2", csv_files)
+    
+    if stock1 == stock2:
+        st.error("Please select two different stocks.")
+        return
+    
+    # Retrieve the selected dataframes
+    df1 = dataframes[stock1]
+    df2 = dataframes[stock2]
+    
+    # Extract Date and Close columns
+    try:
+        df1 = df1[['Date', 'Close']]
+        df2 = df2[['Date', 'Close']]
+    except KeyError as e:
+        st.error(f"Error extracting columns: {e}. Ensure the CSV files have 'Date' and 'Close' columns.")
+        return
+    
+    # Merge the data on Date
+    try:
+        comparison_df = pd.merge(df1, df2, on='Date', how='outer', suffixes=('_1', '_2'))
+    except Exception as e:
+        st.error(f"Error merging DataFrames: {e}")
+        return
+    
+    # Rename columns for clarity
+    comparison_df.rename(columns={
+        'Close_1': stock1,
+        'Close_2': stock2
+    }, inplace=True)
+    
+    # Calculate Ratio
+    comparison_df['Ratio'] = comparison_df[stock1] / comparison_df[stock2]
     
     # Add input boxes for Z-Score lookback and RSI period
     st.write("### Adjust Parameters")
