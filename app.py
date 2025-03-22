@@ -245,7 +245,8 @@ def backtest_page():
                     'Exit Date': exit_date,
                     'Entry Price': entry_price,
                     'Exit Price': exit_price,
-                    'Profit': profit
+                    'Profit': profit,
+                    'Type': 'Long' if profit > 0 else 'Short'
                 })
                 in_trade = False
                 entry_price = None
@@ -253,13 +254,55 @@ def backtest_page():
         
         # Display trade results
         if trades:
-            st.write("### Trade Results")
             trades_df = pd.DataFrame(trades)
+            st.write("### Trade Results")
             st.dataframe(trades_df)
             
-            # Calculate total profit
+            # Calculate trade summary metrics
+            total_trades = len(trades_df)
+            winning_trades = trades_df[trades_df['Profit'] > 0]
+            losing_trades = trades_df[trades_df['Profit'] <= 0]
+            win_rate = (len(winning_trades) / total_trades) * 100
+            lose_rate = (len(losing_trades) / total_trades) * 100
+            
+            long_trades = trades_df[trades_df['Type'] == 'Long']
+            total_long_trades = len(long_trades)
+            long_winning_trades = long_trades[long_trades['Profit'] > 0]
+            long_win_rate = (len(long_winning_trades) / total_long_trades) * 100 if total_long_trades > 0 else 0
+            long_lose_rate = 100 - long_win_rate
+            
+            short_trades = trades_df[trades_df['Type'] == 'Short']
+            total_short_trades = len(short_trades)
+            short_winning_trades = short_trades[short_trades['Profit'] > 0]
+            short_win_rate = (len(short_winning_trades) / total_short_trades) * 100 if total_short_trades > 0 else 0
+            short_lose_rate = 100 - short_win_rate
+            
+            max_drawdown = trades_df['Profit'].cumsum().min()
             total_profit = trades_df['Profit'].sum()
-            st.write(f"**Total Profit:** {total_profit}")
+            total_loss = abs(trades_df[trades_df['Profit'] <= 0]['Profit'].sum())
+            profit_factor = total_profit / total_loss if total_loss > 0 else 0
+            
+            # Display trade summary
+            st.write("### Trade Summary")
+            summary_data = {
+                'Metric': [
+                    'Total Trades', 'Win Rate (%)', 'Lose Rate (%)',
+                    'Total Long Trades', 'Long Win Rate (%)', 'Long Lose Rate (%)',
+                    'Total Short Trades', 'Short Win Rate (%)', 'Short Lose Rate (%)',
+                    'Max Drawdown ($)', 'Profit Factor'
+                ],
+                'Value': [
+                    total_trades, f"{win_rate:.2f}", f"{lose_rate:.2f}",
+                    total_long_trades, f"{long_win_rate:.2f}", f"{long_lose_rate:.2f}",
+                    total_short_trades, f"{short_win_rate:.2f}", f"{short_lose_rate:.2f}",
+                    f"{max_drawdown:.2f}", f"{profit_factor:.2f}"
+                ]
+            }
+            summary_df = pd.DataFrame(summary_data)
+            st.dataframe(summary_df)
+            
+            # Display total profit
+            st.write(f"**Total Profit:** {total_profit:.2f}")
         else:
             st.write("No trades executed based on the provided Z-Score values.")
 
