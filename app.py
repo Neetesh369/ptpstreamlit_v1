@@ -191,19 +191,26 @@ def list_google_drive_folders(creds):
         # Retrieve the merged DataFrame from session_state
         comparison_df = st.session_state['comparison_df']
         
-        # Add input boxes for Z-Score lookback and RSI period
-        st.write("### Adjust Parameters")
-        zscore_lookback = st.number_input("Z-Score Lookback Period (days)", min_value=1, value=50)
-        rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14)
+        # Use a form to batch input changes
+        with st.form("parameters_form"):
+            st.write("### Adjust Parameters")
+            zscore_lookback = st.number_input("Z-Score Lookback Period (days)", min_value=1, value=50)
+            rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14)
+            submit_button = st.form_submit_button("Apply Changes")
         
-        # Calculate Z-Score of Ratio
-        comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=zscore_lookback)
-        
-        # Calculate RSI of Ratio
-        comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
-        
-        # Sort by Date (most recent first) and limit to 300 rows
-        comparison_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
+        # Recalculate Z-Score and RSI when the form is submitted
+        if submit_button:
+            # Calculate Z-Score of Ratio
+            comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=zscore_lookback)
+            
+            # Calculate RSI of Ratio
+            comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
+            
+            # Sort by Date (most recent first) and limit to 300 rows
+            comparison_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
+            
+            # Store the updated DataFrame in session_state
+            st.session_state['comparison_df'] = comparison_df
         
         # Display the comparison table
         st.write("### Stock Price Comparison (Last 300 Rows)")
