@@ -209,13 +209,17 @@ def backtest_page():
     
     with col1:
         st.write("### Long Trade Parameters")
-        long_entry_zscore = st.number_input("Long Entry Z-Score", value=1.0, key="long_entry")
-        long_exit_zscore = st.number_input("Long Exit Z-Score", value=0.0, key="long_exit")
+        long_entry_zscore = st.number_input("Long Entry Z-Score", value=1.0, key="long_entry_zscore")
+        long_exit_zscore = st.number_input("Long Exit Z-Score", value=0.0, key="long_exit_zscore")
+        long_entry_rsi = st.slider("Long Entry RSI", 0, 100, 30, key="long_entry_rsi")
+        long_exit_rsi = st.slider("Long Exit RSI", 0, 100, 70, key="long_exit_rsi")
     
     with col2:
         st.write("### Short Trade Parameters")
-        short_entry_zscore = st.number_input("Short Entry Z-Score", value=-1.0, key="short_entry")
-        short_exit_zscore = st.number_input("Short Exit Z-Score", value=0.0, key="short_exit")
+        short_entry_zscore = st.number_input("Short Entry Z-Score", value=-1.0, key="short_entry_zscore")
+        short_exit_zscore = st.number_input("Short Exit Z-Score", value=0.0, key="short_exit_zscore")
+        short_entry_rsi = st.slider("Short Entry RSI", 0, 100, 70, key="short_entry_rsi")
+        short_exit_rsi = st.slider("Short Exit RSI", 0, 100, 30, key="short_exit_rsi")
     
     # Add a "Go" button
     if st.button("Go"):
@@ -243,12 +247,12 @@ def backtest_page():
         
         for index, row in comparison_df.iterrows():
             # Long trade logic
-            if not in_long_trade and row['Z-Score'] >= long_entry_zscore:
+            if not in_long_trade and row['Z-Score'] >= long_entry_zscore and row['RSI'] <= long_entry_rsi:
                 # Enter long trade
                 in_long_trade = True
                 long_entry_price = row['Ratio']
                 long_entry_date = row['Date']
-            elif in_long_trade and row['Z-Score'] <= long_exit_zscore:
+            elif in_long_trade and (row['Z-Score'] <= long_exit_zscore or row['RSI'] >= long_exit_rsi):
                 # Exit long trade
                 exit_price = row['Ratio']
                 exit_date = row['Date']
@@ -266,12 +270,12 @@ def backtest_page():
                 long_entry_date = None
             
             # Short trade logic
-            if not in_short_trade and row['Z-Score'] <= short_entry_zscore:
+            if not in_short_trade and row['Z-Score'] <= short_entry_zscore and row['RSI'] >= short_entry_rsi:
                 # Enter short trade
                 in_short_trade = True
                 short_entry_price = row['Ratio']
                 short_entry_date = row['Date']
-            elif in_short_trade and row['Z-Score'] >= short_exit_zscore:
+            elif in_short_trade and (row['Z-Score'] >= short_exit_zscore or row['RSI'] <= short_exit_rsi):
                 # Exit short trade
                 exit_price = row['Ratio']
                 exit_date = row['Date']
@@ -345,7 +349,7 @@ def backtest_page():
             st.write("### Equity Curve")
             st.line_chart(trades_df.set_index('Exit Date')['Cumulative Profit'])
         else:
-            st.write("No trades executed based on the provided Z-Score values.")
+            st.write("No trades executed based on the provided Z-Score and RSI values.")
             
 def logout():
     """Clear the session state and log out the user."""
