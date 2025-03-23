@@ -151,11 +151,11 @@ def list_google_drive_folders(creds):
 
 def backtest_page():
     """Backtesting page to analyze stock data."""
-    st.title("Backtesting Page")
+    st.title("📈 Backtesting Page")
     
     # Check if the CSV files and dataframes are available in session_state
     if 'csv_files' not in st.session_state or 'dataframes' not in st.session_state:
-        st.warning("Please load data from the Google Drive Viewer first.")
+        st.warning("⚠️ Please load data from the Google Drive Viewer first.")
         return
     
     # Retrieve the list of CSV files and dataframes from session_state
@@ -163,12 +163,15 @@ def backtest_page():
     dataframes = st.session_state['dataframes']
     
     # Add dropdowns to select two stocks
-    st.write("### Select Stocks")
-    stock1 = st.selectbox("Select Stock 1", csv_files)
-    stock2 = st.selectbox("Select Stock 2", csv_files)
+    st.header("📊 Select Stocks")
+    col1, col2 = st.columns(2)
+    with col1:
+        stock1 = st.selectbox("Select Stock 1", csv_files, key="stock1")
+    with col2:
+        stock2 = st.selectbox("Select Stock 2", csv_files, key="stock2")
     
     if stock1 == stock2:
-        st.error("Please select two different stocks.")
+        st.error("❌ Please select two different stocks.")
         return
     
     # Retrieve the selected dataframes
@@ -180,14 +183,14 @@ def backtest_page():
         df1 = df1[['Date', 'Close']]
         df2 = df2[['Date', 'Close']]
     except KeyError as e:
-        st.error(f"Error extracting columns: {e}. Ensure the CSV files have 'Date' and 'Close' columns.")
+        st.error(f"❌ Error extracting columns: {e}. Ensure the CSV files have 'Date' and 'Close' columns.")
         return
     
     # Merge the data on Date
     try:
         comparison_df = pd.merge(df1, df2, on='Date', how='outer', suffixes=('_1', '_2'))
     except Exception as e:
-        st.error(f"Error merging DataFrames: {e}")
+        st.error(f"❌ Error merging DataFrames: {e}")
         return
     
     # Rename columns for clarity
@@ -200,29 +203,33 @@ def backtest_page():
     comparison_df['Ratio'] = comparison_df[stock1] / comparison_df[stock2]
     
     # Add input boxes for Z-Score lookback and RSI period
-    st.write("### Adjust Parameters")
-    zscore_lookback = st.number_input("Z-Score Lookback Period (days)", min_value=1, value=50)
-    rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14)
+    st.header("⚙️ Adjust Parameters")
+    col1, col2 = st.columns(2)
+    with col1:
+        zscore_lookback = st.number_input("Z-Score Lookback Period (days)", min_value=1, value=50, key="zscore_lookback")
+    with col2:
+        rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14, key="rsi_period")
     
     # Create two columns for long and short trade inputs
+    st.subheader("🎯 Trade Parameters")
     col1, col2 = st.columns(2)
     
     with col1:
-        st.write("### Long Trade Parameters")
+        st.markdown("**📈 Long Trade Parameters**")
         long_entry_zscore = st.number_input("Long Entry Z-Score", value=1.0, key="long_entry_zscore")
         long_exit_zscore = st.number_input("Long Exit Z-Score", value=0.0, key="long_exit_zscore")
         long_entry_rsi = st.slider("Long Entry RSI", 0, 100, 30, key="long_entry_rsi")
         long_exit_rsi = st.slider("Long Exit RSI", 0, 100, 70, key="long_exit_rsi")
     
     with col2:
-        st.write("### Short Trade Parameters")
+        st.markdown("**📉 Short Trade Parameters**")
         short_entry_zscore = st.number_input("Short Entry Z-Score", value=-1.0, key="short_entry_zscore")
         short_exit_zscore = st.number_input("Short Exit Z-Score", value=0.0, key="short_exit_zscore")
         short_entry_rsi = st.slider("Short Entry RSI", 0, 100, 70, key="short_entry_rsi")
         short_exit_rsi = st.slider("Short Exit RSI", 0, 100, 30, key="short_exit_rsi")
     
     # Add a "Go" button
-    if st.button("Go"):
+    if st.button("🚀 Go"):
         # Calculate Z-Score of Ratio
         comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=zscore_lookback)
         
@@ -233,7 +240,7 @@ def backtest_page():
         comparison_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
         
         # Display the comparison table
-        st.write("### Stock Price Comparison (Last 300 Rows)")
+        st.header("📊 Stock Price Comparison (Last 300 Rows)")
         st.dataframe(comparison_df)
         
         # Calculate trade results
@@ -295,7 +302,7 @@ def backtest_page():
         # Display trade results
         if trades:
             trades_df = pd.DataFrame(trades)
-            st.write("### Trade Results")
+            st.header("📊 Trade Results")
             st.dataframe(trades_df)
             
             # Calculate trade summary metrics
@@ -323,7 +330,7 @@ def backtest_page():
             profit_factor = total_profit / total_loss if total_loss > 0 else 0
             
             # Display trade summary
-            st.write("### Trade Summary")
+            st.header("📊 Trade Summary")
             summary_data = {
                 'Metric': [
                     'Total Trades', 'Win Rate (%)', 'Lose Rate (%)',
@@ -342,14 +349,14 @@ def backtest_page():
             st.dataframe(summary_df)
             
             # Display total profit
-            st.write(f"**Total Profit:** {total_profit:.2f}")
+            st.success(f"💰 **Total Profit:** {total_profit:.2f}")
             
             # Calculate and plot Equity Curve
             trades_df['Cumulative Profit'] = trades_df['Profit'].cumsum()
-            st.write("### Equity Curve")
+            st.header("📈 Equity Curve")
             st.line_chart(trades_df.set_index('Exit Date')['Cumulative Profit'])
         else:
-            st.write("No trades executed based on the provided Z-Score and RSI values.")
+            st.warning("⚠️ No trades executed based on the provided Z-Score and RSI values.")
             
 def logout():
     """Clear the session state and log out the user."""
