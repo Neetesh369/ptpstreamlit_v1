@@ -213,9 +213,9 @@ def download_historical_data(symbol_file_path, output_folder_path, start_date, e
             # Rearrange columns
             data = data[['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
 
-            # Remove the second row (unwanted line)
-            if len(data) > 1:  # Check if there are at least 2 rows
-                data = data.drop(1)  # Drop the second row (index 1)
+            # Remove the first row (unwanted line)
+            if len(data) > 0:  # Check if there is at least 1 row
+                data = data.drop(0)  # Drop the first row (index 0)
 
             # Save to CSV
             output_file = os.path.join(output_folder_path, f"{symbol}.csv")
@@ -258,7 +258,7 @@ def data_storage_page(creds):
     end_date = st.date_input("End Date")
 
     # Path to the symbol file
-    symbol_file_path = "symbols.csv"  # Replace with the path to your symbol file
+    symbol_file_path = "fosymbols.csv"  # Replace with the path to your symbol file
 
     # Output folder path
     output_folder_path = "downloaded_data"
