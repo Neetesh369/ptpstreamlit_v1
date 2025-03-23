@@ -3,11 +3,12 @@ import os
 import pandas as pd
 import io
 import numpy as np
+import yfinance as yf
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 import uuid
 
 # Inject custom CSS to use Inter font
@@ -43,7 +44,7 @@ st.markdown(
 )
 
 # If modifying these SCOPES, delete the file token.json.
-SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']
 
 # Define the redirect URI (must match the one in Google Cloud Console)
 REDIRECT_URI = 'https://ptpapp-qjxrob2c9ydjxeroncdq9z.streamlit.app/'
@@ -180,6 +181,111 @@ def list_google_drive_folders(creds):
         
     except Exception as e:
         st.error(f"An error occurred: {e}")
+
+def download_historical_data(symbol_file_path, output_folder_path, start_date, end_date):
+    """Download historical data from Yahoo Finance and clean the CSV files."""
+    try:
+        # Read the symbol file
+        symbols = pd.read_csv(symbol_file_path, header=None).iloc[:, 0].tolist()
+    except Exception as e:
+        st.error(f"Error reading symbol file: {e}")
+        return
+
+    # Ensure the output folder exists
+    if not os.path.exists(output_folder_path):
+        os.makedirs(output_folder_path)
+
+    # Download data for each symbol
+    for symbol in symbols:
+        try:
+            st.write(f"Downloading data for {symbol}...")
+            data = yf.download(symbol, start=start_date, end=end_date)
+
+            # If no data is retrieved, skip saving
+            if data.empty:
+                st.warning(f"No data found for {symbol}. Skipping...")
+                continue
+
+            # Add Symbol column and reset index
+            data['Symbol'] = symbol
+            data.reset_index(inplace=True)
+
+            # Rearrange columns
+            data = data[['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
+
+            # Remove the second row (unwanted line)
+            data = data.drop(1)
+
+            # Save to CSV
+            output_file = os.path.join(output_folder_path, f"{symbol}.csv")
+            data.to_csv(output_file, index=False)
+            st.success(f"Data for {symbol} saved to {output_file}")
+        except Exception as e:
+            st.error(f"Error downloading data for {symbol}: {e}")
+
+def upload_file_to_drive(creds, file_path, file_name, folder_id=None):
+    """Upload a file to Google Drive."""
+    try:
+        service = build('drive', 'v3', credentials=creds)
+        
+        # Define file metadata
+        file_metadata = {
+            'name': file_name,
+        }
+        if folder_id:
+            file_metadata['parents'] = [folder_id]
+        
+        # Upload the file
+        media = MediaFileUpload(file_path, resumable=True)
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id'
+        ).execute()
+        
+        st.success(f"File uploaded successfully! File ID: {file.get('id')}")
+    except Exception as e:
+        st.error(f"An error occurred while uploading the file: {e}")
+
+def data_storage_page(creds):
+    """Data Storage page to download and store stock data."""
+    st.title("📂 Data Storage")
+
+    # Input fields for start and end dates
+    st.write("### Enter Date Range")
+    start_date = st.date_input("Start Date")
+    end_date = st.date_input("End Date")
+
+    # Path to the symbol file
+    symbol_file_path = "fosymbols.csv"  # Replace with the path to your symbol file
+
+    # Output folder path
+    output_folder_path = "downloaded_data"
+    if not os.path.exists(output_folder_path):
+        os.makedirs(output_folder_path)
+
+    # Download and clean data
+    if st.button("Download and Clean Data"):
+        download_historical_data(symbol_file_path, output_folder_path, start_date, end_date)
+
+    # Upload files to Google Drive
+    if st.button("Upload to Google Drive"):
+        # Find the folder ID of 'nsetest'
+        service = build('drive', 'v3', credentials=creds)
+        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetest'"
+        folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
+        folders = folder_results.get('files', [])
+        
+        if not folders:
+            st.error("Folder 'nsetest' not found.")
+            return
+        
+        nsetest_folder_id = folders[0]['id']
+
+        # Upload each file in the output folder
+        for file_name in os.listdir(output_folder_path):
+            file_path = os.path.join(output_folder_path, file_name)
+            upload_file_to_drive(creds, file_path, file_name, folder_id=nsetest_folder_id)
 
 def backtest_page():
     """Backtesting page to analyze stock data."""
@@ -397,29 +503,6 @@ def logout():
         del st.session_state['tokens'][session_id]
     st.success("Logged out successfully!")
 
-def data_storage_page():
-    """Data Storage page to upload and store data files."""
-    st.title("Data Storage Page")
-    
-    # Create a directory to store uploaded files
-    if not os.path.exists("uploaded_files"):
-        os.makedirs("uploaded_files")
-    
-    # File uploader
-    uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
-    
-    if uploaded_file is not None:
-        # Save the file to the uploaded_files directory
-        file_path = os.path.join("uploaded_files", uploaded_file.name)
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        st.success(f"File '{uploaded_file.name}' uploaded successfully!")
-        
-        # Display the uploaded file
-        st.write("Uploaded File Content:")
-        df = pd.read_csv(file_path)
-        st.dataframe(df)
-
 def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio("Go to", ["Google Drive Viewer", "Backtesting Page", "Data Storage"])
@@ -441,7 +524,9 @@ def main():
     elif page == "Backtesting Page":
         backtest_page()
     elif page == "Data Storage":
-        data_storage_page()
+        creds = authenticate_google()
+        if creds:
+            data_storage_page(creds)
 
 if __name__ == '__main__':
     main()
