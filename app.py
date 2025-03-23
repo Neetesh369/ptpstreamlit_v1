@@ -258,7 +258,7 @@ def data_storage_page(creds):
     end_date = st.date_input("End Date")
 
     # Path to the symbol file
-    symbol_file_path = "fosymbols.csv"  # Replace with the path to your symbol file
+    symbol_file_path = "symbols.csv"  # Replace with the path to your symbol file
 
     # Output folder path
     output_folder_path = "downloaded_data"
