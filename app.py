@@ -214,7 +214,8 @@ def download_historical_data(symbol_file_path, output_folder_path, start_date, e
             data = data[['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
 
             # Remove the second row (unwanted line)
-            data = data.drop(1)
+            if len(data) > 1:  # Check if there are at least 2 rows
+                data = data.drop(1)  # Drop the second row (index 1)
 
             # Save to CSV
             output_file = os.path.join(output_folder_path, f"{symbol}.csv")
@@ -257,7 +258,7 @@ def data_storage_page(creds):
     end_date = st.date_input("End Date")
 
     # Path to the symbol file
-    symbol_file_path = "symbols.csv"  # Replace with the path to your symbol file
+    symbol_file_path = "fosymbols.csv"  # Replace with the path to your symbol file
 
     # Output folder path
     output_folder_path = "downloaded_data"
@@ -286,7 +287,7 @@ def data_storage_page(creds):
         for file_name in os.listdir(output_folder_path):
             file_path = os.path.join(output_folder_path, file_name)
             upload_file_to_drive(creds, file_path, file_name, folder_id=nsetest_folder_id)
-
+            
 def backtest_page():
     """Backtesting page to analyze stock data."""
     st.title("Backtesting Page")
