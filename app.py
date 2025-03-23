@@ -204,9 +204,18 @@ def backtest_page():
     zscore_lookback = st.number_input("Z-Score Lookback Period (days)", min_value=1, value=50)
     rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14)
     
-    # Add input boxes for entry and exit Z-Score
-    entry_zscore = st.number_input("Entry Z-Score", value=1.0)
-    exit_zscore = st.number_input("Exit Z-Score", value=0.0)
+    # Create two columns for long and short trade inputs
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("### Long Trade Parameters")
+        long_entry_zscore = st.number_input("Long Entry Z-Score", value=1.0, key="long_entry")
+        long_exit_zscore = st.number_input("Long Exit Z-Score", value=0.0, key="long_exit")
+    
+    with col2:
+        st.write("### Short Trade Parameters")
+        short_entry_zscore = st.number_input("Short Entry Z-Score", value=-1.0, key="short_entry")
+        short_exit_zscore = st.number_input("Short Exit Z-Score", value=0.0, key="short_exit")
     
     # Add a "Go" button
     if st.button("Go"):
@@ -225,32 +234,59 @@ def backtest_page():
         
         # Calculate trade results
         trades = []
-        in_trade = False
-        entry_price = None
-        entry_date = None
+        in_long_trade = False
+        in_short_trade = False
+        long_entry_price = None
+        long_entry_date = None
+        short_entry_price = None
+        short_entry_date = None
         
         for index, row in comparison_df.iterrows():
-            if not in_trade and row['Z-Score'] >= entry_zscore:
-                # Enter trade
-                in_trade = True
-                entry_price = row['Ratio']
-                entry_date = row['Date']
-            elif in_trade and row['Z-Score'] <= exit_zscore:
-                # Exit trade
+            # Long trade logic
+            if not in_long_trade and row['Z-Score'] >= long_entry_zscore:
+                # Enter long trade
+                in_long_trade = True
+                long_entry_price = row['Ratio']
+                long_entry_date = row['Date']
+            elif in_long_trade and row['Z-Score'] <= long_exit_zscore:
+                # Exit long trade
                 exit_price = row['Ratio']
                 exit_date = row['Date']
-                profit = exit_price - entry_price
+                profit = exit_price - long_entry_price
                 trades.append({
-                    'Entry Date': entry_date,
+                    'Entry Date': long_entry_date,
                     'Exit Date': exit_date,
-                    'Entry Price': entry_price,
+                    'Entry Price': long_entry_price,
                     'Exit Price': exit_price,
                     'Profit': profit,
-                    'Type': 'Long' if profit > 0 else 'Short'
+                    'Type': 'Long'
                 })
-                in_trade = False
-                entry_price = None
-                entry_date = None
+                in_long_trade = False
+                long_entry_price = None
+                long_entry_date = None
+            
+            # Short trade logic
+            if not in_short_trade and row['Z-Score'] <= short_entry_zscore:
+                # Enter short trade
+                in_short_trade = True
+                short_entry_price = row['Ratio']
+                short_entry_date = row['Date']
+            elif in_short_trade and row['Z-Score'] >= short_exit_zscore:
+                # Exit short trade
+                exit_price = row['Ratio']
+                exit_date = row['Date']
+                profit = short_entry_price - exit_price  # Profit calculation for short trades
+                trades.append({
+                    'Entry Date': short_entry_date,
+                    'Exit Date': exit_date,
+                    'Entry Price': short_entry_price,
+                    'Exit Price': exit_price,
+                    'Profit': profit,
+                    'Type': 'Short'
+                })
+                in_short_trade = False
+                short_entry_price = None
+                short_entry_date = None
         
         # Display trade results
         if trades:
