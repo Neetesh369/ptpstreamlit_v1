@@ -10,6 +10,20 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import uuid
 
+# Inject custom CSS to use Inter font
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # If modifying these SCOPES, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
