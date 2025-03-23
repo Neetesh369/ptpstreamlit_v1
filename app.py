@@ -212,47 +212,21 @@ def backtest_page():
     
     # Create two columns for long and short trade inputs
     st.subheader("🎯 Trade Parameters")
-    
-    # Custom CSS for green and red boxes
-    st.markdown(
-        """
-        <style>
-        .green-box {
-            background-color: #2e7d32;
-            padding: 20px;
-            border-radius: 10px;
-            color: white;
-        }
-        .red-box {
-            background-color: #c62828;
-            padding: 20px;
-            border-radius: 10px;
-            color: white;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-    
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown('<div class="green-box">', unsafe_allow_html=True)
         st.markdown("**📈 Long Trade Parameters**")
         long_entry_zscore = st.number_input("Long Entry Z-Score", value=1.0, key="long_entry_zscore")
         long_exit_zscore = st.number_input("Long Exit Z-Score", value=0.0, key="long_exit_zscore")
         long_entry_rsi = st.slider("Long Entry RSI", 0, 100, 30, key="long_entry_rsi")
         long_exit_rsi = st.slider("Long Exit RSI", 0, 100, 70, key="long_exit_rsi")
-        st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        st.markdown('<div class="red-box">', unsafe_allow_html=True)
         st.markdown("**📉 Short Trade Parameters**")
         short_entry_zscore = st.number_input("Short Entry Z-Score", value=-1.0, key="short_entry_zscore")
         short_exit_zscore = st.number_input("Short Exit Z-Score", value=0.0, key="short_exit_zscore")
         short_entry_rsi = st.slider("Short Entry RSI", 0, 100, 70, key="short_entry_rsi")
         short_exit_rsi = st.slider("Short Exit RSI", 0, 100, 30, key="short_exit_rsi")
-        st.markdown('</div>', unsafe_allow_html=True)
     
     # Add a "Go" button
     if st.button("🚀 Go"):
