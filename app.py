@@ -397,9 +397,32 @@ def logout():
         del st.session_state['tokens'][session_id]
     st.success("Logged out successfully!")
 
+def data_storage_page():
+    """Data Storage page to upload and store data files."""
+    st.title("Data Storage Page")
+    
+    # Create a directory to store uploaded files
+    if not os.path.exists("uploaded_files"):
+        os.makedirs("uploaded_files")
+    
+    # File uploader
+    uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
+    
+    if uploaded_file is not None:
+        # Save the file to the uploaded_files directory
+        file_path = os.path.join("uploaded_files", uploaded_file.name)
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        st.success(f"File '{uploaded_file.name}' uploaded successfully!")
+        
+        # Display the uploaded file
+        st.write("Uploaded File Content:")
+        df = pd.read_csv(file_path)
+        st.dataframe(df)
+
 def main():
     st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", ["Google Drive Viewer", "Backtesting Page"])
+    page = st.sidebar.radio("Go to", ["Google Drive Viewer", "Backtesting Page", "Data Storage"])
 
     # Generate a unique session ID
     session_id = st.query_params.get('session_id', None)
@@ -417,6 +440,8 @@ def main():
             logout()
     elif page == "Backtesting Page":
         backtest_page()
+    elif page == "Data Storage":
+        data_storage_page()
 
 if __name__ == '__main__':
     main()
