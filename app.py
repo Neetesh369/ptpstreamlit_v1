@@ -303,9 +303,14 @@ def backtest_page():
             
             # Display total profit
             st.write(f"**Total Profit:** {total_profit:.2f}")
+            
+            # Calculate and plot Equity Curve
+            trades_df['Cumulative Profit'] = trades_df['Profit'].cumsum()
+            st.write("### Equity Curve")
+            st.line_chart(trades_df.set_index('Exit Date')['Cumulative Profit'])
         else:
             st.write("No trades executed based on the provided Z-Score values.")
-
+            
 def logout():
     """Clear the session state and log out the user."""
     session_id = st.query_params.get('session_id', None)
