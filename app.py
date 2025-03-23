@@ -19,6 +19,14 @@ st.markdown(
     html, body, [class*="css"] {
         font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     }
+
+    .stHorizontal {
+            background: #fafafa;
+            padding: 20px;
+            border: 10px solid #eeeeee;
+            border-radius: 20px;
+    }
+    
     </style>
     """,
     unsafe_allow_html=True
