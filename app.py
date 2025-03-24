@@ -221,7 +221,7 @@ def download_historical_data(symbol_file_path, output_folder_path, start_date, e
             st.error(f"Error downloading data for {symbol}: {e}")
 
 def clean_and_upload_files(creds, output_folder_path):
-    """Clean CSV files (remove unwanted rows) and upload them to Google Drive."""
+    """Clean CSV files (remove first two rows) and upload them to Google Drive."""
     try:
         # Find the folder ID of 'nsetest'
         service = build('drive', 'v3', credentials=creds)
@@ -241,27 +241,20 @@ def clean_and_upload_files(creds, output_folder_path):
             
             # Read the CSV file
             try:
-                # Read the file, treating the first row as the header
-                df = pd.read_csv(file_path, header=0)
+                df = pd.read_csv(file_path)
                 
-                # Debug: Show original file content
-                st.write(f"Debug: Original file content for {file_name}:")
-                st.dataframe(df)
-                
-                # Remove the unwanted row (index 1)
-                if len(df) > 1:  # Check if there are at least 2 rows
-                    df = df.drop(1)  # Drop the second row (index 1)
-                
-                # Remove the index column (first column)
-                df = df.iloc[:, 1:]  # Keep all rows and all columns except the first
-                
-                # Debug: Show cleaned file content
-                st.write(f"Debug: Cleaned file content for {file_name}:")
-                st.dataframe(df)
+                # Remove the first two rows (index 0 and 1)
+                if len(df) > 2:  # Check if there are at least 3 rows
+                    df = df.drop([0, 1])  # Drop the first two rows
+                elif len(df) > 1:  # If only 2 rows, drop both
+                    df = df.drop([0, 1])
+                else:  # If only 1 row, skip this file
+                    st.warning(f"File {file_name} has only 1 row. Skipping...")
+                    continue
                 
                 # Save the cleaned file back to the same path
                 df.to_csv(file_path, index=False)
-                st.success(f"Cleaned {file_name} and saved to {file_path}.")
+                st.success(f"Cleaned {file_name} (removed first two rows).")
                 
                 # Upload the cleaned file to Google Drive
                 upload_file_to_drive(creds, file_path, file_name, folder_id=nsetest_folder_id)
