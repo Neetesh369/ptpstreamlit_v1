@@ -183,7 +183,7 @@ def list_google_drive_folders(creds):
         st.error(f"An error occurred: {e}")
 
 def download_historical_data(symbol_file_path, output_folder_path, start_date, end_date):
-    """Download historical data from Yahoo Finance and clean the CSV files."""
+    """Download historical data from Yahoo Finance without cleaning."""
     try:
         # Read the symbol file
         symbols = pd.read_csv(symbol_file_path, header=None).iloc[:, 0].tolist()
@@ -213,16 +213,50 @@ def download_historical_data(symbol_file_path, output_folder_path, start_date, e
             # Rearrange columns
             data = data[['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
 
-            # Remove the first row (unwanted line)
-            if len(data) > 0:  # Check if there is at least 1 row
-                data = data.drop(0)  # Drop the first row (index 0)
-
-            # Save to CSV
+            # Save to CSV (as-is, without cleaning)
             output_file = os.path.join(output_folder_path, f"{symbol}.csv")
             data.to_csv(output_file, index=False)
             st.success(f"Data for {symbol} saved to {output_file}")
         except Exception as e:
             st.error(f"Error downloading data for {symbol}: {e}")
+
+def clean_and_upload_files(creds, output_folder_path):
+    """Clean CSV files (remove second row) and upload them to Google Drive."""
+    try:
+        # Find the folder ID of 'nsetest'
+        service = build('drive', 'v3', credentials=creds)
+        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetest'"
+        folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
+        folders = folder_results.get('files', [])
+        
+        if not folders:
+            st.error("Folder 'nsetest' not found.")
+            return
+        
+        nsetest_folder_id = folders[0]['id']
+
+        # Process each file in the output folder
+        for file_name in os.listdir(output_folder_path):
+            file_path = os.path.join(output_folder_path, file_name)
+            
+            # Read the CSV file
+            try:
+                df = pd.read_csv(file_path)
+                
+                # Remove the second row (index 1)
+                if len(df) > 1:  # Check if there are at least 2 rows
+                    df = df.drop(1)  # Drop the second row
+                
+                # Save the cleaned file back to the same path
+                df.to_csv(file_path, index=False)
+                st.success(f"Cleaned {file_name} (removed second row).")
+                
+                # Upload the cleaned file to Google Drive
+                upload_file_to_drive(creds, file_path, file_name, folder_id=nsetest_folder_id)
+            except Exception as e:
+                st.error(f"Error processing {file_name}: {e}")
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
 
 def upload_file_to_drive(creds, file_path, file_name, folder_id=None):
     """Upload a file to Google Drive."""
@@ -265,29 +299,14 @@ def data_storage_page(creds):
     if not os.path.exists(output_folder_path):
         os.makedirs(output_folder_path)
 
-    # Download and clean data
-    if st.button("Download and Clean Data"):
+    # Download data (as-is)
+    if st.button("Download Data"):
         download_historical_data(symbol_file_path, output_folder_path, start_date, end_date)
 
-    # Upload files to Google Drive
-    if st.button("Upload to Google Drive"):
-        # Find the folder ID of 'nsetest'
-        service = build('drive', 'v3', credentials=creds)
-        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetest'"
-        folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
-        folders = folder_results.get('files', [])
-        
-        if not folders:
-            st.error("Folder 'nsetest' not found.")
-            return
-        
-        nsetest_folder_id = folders[0]['id']
+    # Clean and upload files
+    if st.button("Clean and Upload"):
+        clean_and_upload_files(creds, output_folder_path)
 
-        # Upload each file in the output folder
-        for file_name in os.listdir(output_folder_path):
-            file_path = os.path.join(output_folder_path, file_name)
-            upload_file_to_drive(creds, file_path, file_name, folder_id=nsetest_folder_id)
-            
 def backtest_page():
     """Backtesting page to analyze stock data."""
     st.title("Backtesting Page")
