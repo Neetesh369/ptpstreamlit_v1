@@ -303,10 +303,25 @@ def data_storage_page(creds):
     if st.button("Download Data"):
         download_historical_data(symbol_file_path, output_folder_path, start_date, end_date)
 
+    # View downloaded data (raw)
+    if st.button("View Downloaded Data"):
+        if not os.path.exists(output_folder_path):
+            st.warning("No data has been downloaded yet.")
+        else:
+            st.write("### Downloaded Data (Raw)")
+            for file_name in os.listdir(output_folder_path):
+                file_path = os.path.join(output_folder_path, file_name)
+                try:
+                    df = pd.read_csv(file_path)
+                    st.write(f"#### File: {file_name}")
+                    st.dataframe(df)  # Display the raw data in a table
+                except Exception as e:
+                    st.error(f"Error reading {file_name}: {e}")
+
     # Clean and upload files
     if st.button("Clean and Upload"):
         clean_and_upload_files(creds, output_folder_path)
-
+        
 def backtest_page():
     """Backtesting page to analyze stock data."""
     st.title("Backtesting Page")
