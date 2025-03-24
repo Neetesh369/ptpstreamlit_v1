@@ -221,7 +221,7 @@ def download_historical_data(symbol_file_path, output_folder_path, start_date, e
             st.error(f"Error downloading data for {symbol}: {e}")
 
 def clean_and_upload_files(creds, output_folder_path):
-    """Clean CSV files (remove first two rows) and upload them to Google Drive."""
+    """Clean CSV files (remove first row) and upload them to Google Drive."""
     try:
         # Find the folder ID of 'nsetest'
         service = build('drive', 'v3', credentials=creds)
@@ -243,18 +243,16 @@ def clean_and_upload_files(creds, output_folder_path):
             try:
                 df = pd.read_csv(file_path)
                 
-                # Remove the first two rows (index 0 and 1)
-                if len(df) > 2:  # Check if there are at least 3 rows
-                    df = df.drop([0, 1])  # Drop the first two rows
-                elif len(df) > 1:  # If only 2 rows, drop both
-                    df = df.drop([0, 1])
+                # Remove the first row (index 0)
+                if len(df) > 1:  # Check if there are at least 2 rows
+                    df = df.drop(0)  # Drop the first row
                 else:  # If only 1 row, skip this file
                     st.warning(f"File {file_name} has only 1 row. Skipping...")
                     continue
                 
                 # Save the cleaned file back to the same path
                 df.to_csv(file_path, index=False)
-                st.success(f"Cleaned {file_name} (removed first two rows).")
+                st.success(f"Cleaned {file_name} (removed first row).")
                 
                 # Upload the cleaned file to Google Drive
                 upload_file_to_drive(creds, file_path, file_name, folder_id=nsetest_folder_id)
@@ -262,7 +260,7 @@ def clean_and_upload_files(creds, output_folder_path):
                 st.error(f"Error processing {file_name}: {e}")
     except Exception as e:
         st.error(f"An error occurred: {e}")
-
+        
 def upload_file_to_drive(creds, file_path, file_name, folder_id=None):
     """Upload a file to Google Drive."""
     try:
