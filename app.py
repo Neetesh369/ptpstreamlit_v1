@@ -389,13 +389,20 @@ def backtest_page():
     with col2:
         rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14, key="rsi_period")
     
-    # Add RSI checkboxes
-    st.subheader("RSI Settings")
+    # Add RSI checkboxes with a more visible style
+    st.markdown("### RSI Settings")
+    st.markdown("Enable or disable RSI conditions for trade entry and exit")
+    
     col1, col2 = st.columns(2)
     with col1:
-        use_rsi_for_entry = st.checkbox("Use RSI for Entry", value=True, key="use_rsi_for_entry")
+        use_rsi_for_entry = st.checkbox("✅ Use RSI for Entry", value=True, key="use_rsi_for_entry", 
+                                       help="When enabled, RSI conditions must be met for trade entry")
     with col2:
-        use_rsi_for_exit = st.checkbox("Use RSI for Exit", value=True, key="use_rsi_for_exit")
+        use_rsi_for_exit = st.checkbox("✅ Use RSI for Exit", value=True, key="use_rsi_for_exit",
+                                      help="When enabled, RSI conditions must be met for trade exit")
+    
+    # Add a visual separator
+    st.markdown("---")
     
     # Create two columns for long and short trade inputs
     st.subheader("Trade Parameters")
