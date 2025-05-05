@@ -559,7 +559,7 @@ def backtest_page():
                 current_profit_pct = ((short_entry_price - current_ratio) / short_entry_price) * 100
                 
                 # Check all exit conditions
-                zscore_exit = current_zscore >= short_exit_zscore
+                zscore_exit = current_zscore <= short_exit_zscore  # FIXED: For short trades, exit when Z-Score falls below exit threshold
                 rsi_exit = use_rsi_for_exit and current_rsi <= short_exit_rsi
                 time_exit = days_in_trade >= max_days_in_trade
                 target_exit = current_profit_pct >= target_profit_pct
