@@ -108,8 +108,206 @@ def calculate_rsi(series, window=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
+def list_google_drive_folders(creds):
+    """Read and compare stock price data from CSV files in the 'nsetest' folder."""
+    try:
+        service = build('drive', 'v3', credentials=creds)
+        
+        # Find the folder ID of 'nsetest'
+        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetest'"
+        folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
+        folders = folder_results.get('files', [])
+        
+        if not folders:
+            st.write("Folder 'nsetest' not found.")
+            return
+        
+        nsetest_folder_id = folders[0]['id']
+        
+        # Find all CSV files in the 'nsetest' folder
+        file_query = f"'{nsetest_folder_id}' in parents and mimeType='text/csv'"
+        file_results = service.files().list(q=file_query, fields="files(id, name)").execute()
+        files = file_results.get('files', [])
+        
+        if not files:
+            st.write("No CSV files found in the 'nsetest' folder.")
+            return
+        
+        # Store the list of CSV files in session_state
+        st.session_state['csv_files'] = [file['name'] for file in files]
+        
+        # Download and read the CSV files
+        dataframes = {}
+        for file in files:
+            try:
+                file_id = file['id']
+                request = service.files().get_media(fileId=file_id)
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+                fh.seek(0)
+                
+                # Read the CSV file with explicit delimiter and error handling
+                df = pd.read_csv(fh, delimiter=',', encoding='utf-8')
+                dataframes[file['name']] = df
+                st.write(f"Debug: Successfully read {file['name']} with {len(df)} rows.")
+            except Exception as e:
+                st.error(f"Error reading {file['name']}: {e}")
+                return
+        
+        # Store the dataframes in session_state
+        st.session_state['dataframes'] = dataframes
+        
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
+
+def download_historical_data(symbol_file_path, output_folder_path, start_date, end_date):
+    """Download historical data from Yahoo Finance without cleaning."""
+    try:
+        # Read the symbol file
+        symbols = pd.read_csv(symbol_file_path, header=None).iloc[:, 0].tolist()
+    except Exception as e:
+        st.error(f"Error reading symbol file: {e}")
+        return
+
+    # Ensure the output folder exists
+    if not os.path.exists(output_folder_path):
+        os.makedirs(output_folder_path)
+
+    # Download data for each symbol
+    for symbol in symbols:
+        try:
+            st.write(f"Downloading data for {symbol}...")
+            data = yf.download(symbol, start=start_date, end=end_date)
+
+            # If no data is retrieved, skip saving
+            if data.empty:
+                st.warning(f"No data found for {symbol}. Skipping...")
+                continue
+
+            # Add Symbol column and reset index
+            data['Symbol'] = symbol
+            data.reset_index(inplace=True)
+
+            # Rearrange columns
+            data = data[['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
+
+            # Save to CSV (as-is, without cleaning)
+            output_file = os.path.join(output_folder_path, f"{symbol}.csv")
+            data.to_csv(output_file, index=False)
+            st.success(f"Data for {symbol} saved to {output_file}")
+        except Exception as e:
+            st.error(f"Error downloading data for {symbol}: {e}")
+
+def clean_and_upload_files(creds, output_folder_path):
+    """Clean CSV files (remove first row) and upload them to Google Drive."""
+    try:
+        # Find the folder ID of 'nsetest'
+        service = build('drive', 'v3', credentials=creds)
+        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetest'"
+        folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
+        folders = folder_results.get('files', [])
+        
+        if not folders:
+            st.error("Folder 'nsetest' not found.")
+            return
+        
+        nsetest_folder_id = folders[0]['id']
+
+        # Process each file in the output folder
+        for file_name in os.listdir(output_folder_path):
+            file_path = os.path.join(output_folder_path, file_name)
+            
+            # Read the CSV file
+            try:
+                df = pd.read_csv(file_path)
+                
+                # Remove the first row (index 0)
+                if len(df) > 1:  # Check if there are at least 2 rows
+                    df = df.drop(0)  # Drop the first row
+                else:  # If only 1 row, skip this file
+                    st.warning(f"File {file_name} has only 1 row. Skipping...")
+                    continue
+                
+                # Save the cleaned file back to the same path
+                df.to_csv(file_path, index=False)
+                st.success(f"Cleaned {file_name} (removed first row).")
+                
+                # Upload the cleaned file to Google Drive
+                upload_file_to_drive(creds, file_path, file_name, folder_id=nsetest_folder_id)
+            except Exception as e:
+                st.error(f"Error processing {file_name}: {e}")
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
+        
+def upload_file_to_drive(creds, file_path, file_name, folder_id=None):
+    """Upload a file to Google Drive."""
+    try:
+        service = build('drive', 'v3', credentials=creds)
+        
+        # Define file metadata
+        file_metadata = {
+            'name': file_name,
+        }
+        if folder_id:
+            file_metadata['parents'] = [folder_id]
+        
+        # Upload the file
+        media = MediaFileUpload(file_path, resumable=True)
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id'
+        ).execute()
+        
+        st.success(f"File uploaded successfully! File ID: {file.get('id')}")
+    except Exception as e:
+        st.error(f"An error occurred while uploading the file: {e}")
+
+def data_storage_page(creds):
+    """Data Storage page to download and store stock data."""
+    st.title("📂 Data Storage")
+
+    # Input fields for start and end dates
+    st.write("### Enter Date Range")
+    start_date = st.date_input("Start Date")
+    end_date = st.date_input("End Date")
+
+    # Path to the symbol file
+    symbol_file_path = "fosymbols.csv"  # Replace with the path to your symbol file
+
+    # Output folder path
+    output_folder_path = "downloaded_data"
+    if not os.path.exists(output_folder_path):
+        os.makedirs(output_folder_path)
+
+    # Download data (as-is)
+    if st.button("Download Data"):
+        download_historical_data(symbol_file_path, output_folder_path, start_date, end_date)
+
+    # View downloaded data (raw)
+    if st.button("View Downloaded Data"):
+        if not os.path.exists(output_folder_path):
+            st.warning("No data has been downloaded yet.")
+        else:
+            st.write("### Downloaded Data (Raw)")
+            for file_name in os.listdir(output_folder_path):
+                file_path = os.path.join(output_folder_path, file_name)
+                try:
+                    df = pd.read_csv(file_path)
+                    st.write(f"#### File: {file_name}")
+                    st.dataframe(df)  # Display the raw data in a table
+                except Exception as e:
+                    st.error(f"Error reading {file_name}: {e}")
+
+    # Clean and upload files
+    if st.button("Clean and Upload"):
+        clean_and_upload_files(creds, output_folder_path)
+
 def backtest_page():
-    """Updated backtesting page with Z-Score sign enforcement."""
+    """Backtesting page with strict Z-Score sign enforcement."""
     st.title("Backtesting Page")
     
     if 'csv_files' not in st.session_state or 'dataframes' not in st.session_state:
@@ -152,77 +350,103 @@ def backtest_page():
     
     with col1:
         st.markdown("**Long Trade Parameters**")
-        # Long Entry (must be ≤ 0)
-        long_entry_col = st.columns([1, 2, 1])
-        with long_entry_col[0]:
+        
+        # Initialize session state for long entry
+        if 'long_entry_zscore' not in st.session_state:
+            st.session_state.long_entry_zscore = -2.5
+        
+        # Long Entry Z-Score (must be ≤ 0)
+        st.write("Entry Z-Score (≤ 0)")
+        entry_col = st.columns([1, 4, 1])
+        with entry_col[0]:
             if st.button("−", key="long_entry_dec"):
-                st.session_state.long_entry_zscore = max(st.session_state.get('long_entry_zscore', -1.0) - 0.1, -3.0)
-        with long_entry_col[1]:
-            long_entry_zscore = st.number_input(
-                "Entry Z-Score (≤ 0)",
-                value=-1.0,
-                max_value=0.0,
-                key="long_entry_zscore"
+                st.session_state.long_entry_zscore -= 0.1
+        with entry_col[1]:
+            st.text_input(
+                "Current Value",
+                value=f"{st.session_state.long_entry_zscore:.1f}",
+                key="long_entry_display",
+                disabled=True,
+                label_visibility="collapsed"
             )
-        with long_entry_col[2]:
+        with entry_col[2]:
             if st.button("+", key="long_entry_inc"):
-                st.session_state.long_entry_zscore = min(st.session_state.get('long_entry_zscore', -1.0) + 0.1, 0.0)
+                st.session_state.long_entry_zscore = min(st.session_state.long_entry_zscore + 0.1, 0.0)
         
-        # Long Exit (must be ≥ 0)
-        long_exit_col = st.columns([1, 2, 1])
-        with long_exit_col[0]:
+        # Long Exit Z-Score (must be ≥ 0)
+        if 'long_exit_zscore' not in st.session_state:
+            st.session_state.long_exit_zscore = 0.0
+        
+        st.write("Exit Z-Score (≥ 0)")
+        exit_col = st.columns([1, 4, 1])
+        with exit_col[0]:
             if st.button("−", key="long_exit_dec"):
-                st.session_state.long_exit_zscore = max(st.session_state.get('long_exit_zscore', 0.0) - 0.1, 0.0)
-        with long_exit_col[1]:
-            long_exit_zscore = st.number_input(
-                "Exit Z-Score (≥ 0)",
-                value=0.0,
-                min_value=0.0,
-                key="long_exit_zscore"
+                st.session_state.long_exit_zscore = max(st.session_state.long_exit_zscore - 0.1, 0.0)
+        with exit_col[1]:
+            st.text_input(
+                "Current Value",
+                value=f"{st.session_state.long_exit_zscore:.1f}",
+                key="long_exit_display",
+                disabled=True,
+                label_visibility="collapsed"
             )
-        with long_exit_col[2]:
+        with exit_col[2]:
             if st.button("+", key="long_exit_inc"):
-                st.session_state.long_exit_zscore = min(st.session_state.get('long_exit_zscore', 0.0) + 0.1, 3.0)
+                st.session_state.long_exit_zscore += 0.1
         
-        long_entry_rsi = st.slider("Entry RSI (≤)", 0, 100, 30)
-        long_exit_rsi = st.slider("Exit RSI (≥)", 0, 100, 70)
+        # RSI parameters
+        long_entry_rsi = st.slider("Entry RSI (≤)", 0, 100, 30, key="long_entry_rsi")
+        long_exit_rsi = st.slider("Exit RSI (≥)", 0, 100, 70, key="long_exit_rsi")
     
     with col2:
         st.markdown("**Short Trade Parameters**")
-        # Short Entry (must be ≥ 0)
-        short_entry_col = st.columns([1, 2, 1])
-        with short_entry_col[0]:
+        
+        # Initialize session state for short entry
+        if 'short_entry_zscore' not in st.session_state:
+            st.session_state.short_entry_zscore = 2.5
+        
+        # Short Entry Z-Score (must be ≥ 0)
+        st.write("Entry Z-Score (≥ 0)")
+        entry_col = st.columns([1, 4, 1])
+        with entry_col[0]:
             if st.button("−", key="short_entry_dec"):
-                st.session_state.short_entry_zscore = max(st.session_state.get('short_entry_zscore', 1.0) - 0.1, 0.0)
-        with short_entry_col[1]:
-            short_entry_zscore = st.number_input(
-                "Entry Z-Score (≥ 0)",
-                value=1.0,
-                min_value=0.0,
-                key="short_entry_zscore"
+                st.session_state.short_entry_zscore = max(st.session_state.short_entry_zscore - 0.1, 0.0)
+        with entry_col[1]:
+            st.text_input(
+                "Current Value",
+                value=f"{st.session_state.short_entry_zscore:.1f}",
+                key="short_entry_display",
+                disabled=True,
+                label_visibility="collapsed"
             )
-        with short_entry_col[2]:
+        with entry_col[2]:
             if st.button("+", key="short_entry_inc"):
-                st.session_state.short_entry_zscore = min(st.session_state.get('short_entry_zscore', 1.0) + 0.1, 3.0)
+                st.session_state.short_entry_zscore += 0.1
         
-        # Short Exit (must be ≤ 0)
-        short_exit_col = st.columns([1, 2, 1])
-        with short_exit_col[0]:
+        # Short Exit Z-Score (must be ≤ 0)
+        if 'short_exit_zscore' not in st.session_state:
+            st.session_state.short_exit_zscore = 0.0
+        
+        st.write("Exit Z-Score (≤ 0)")
+        exit_col = st.columns([1, 4, 1])
+        with exit_col[0]:
             if st.button("−", key="short_exit_dec"):
-                st.session_state.short_exit_zscore = max(st.session_state.get('short_exit_zscore', 0.0) - 0.1, -3.0)
-        with short_exit_col[1]:
-            short_exit_zscore = st.number_input(
-                "Exit Z-Score (≤ 0)",
-                value=0.0,
-                max_value=0.0,
-                key="short_exit_zscore"
+                st.session_state.short_exit_zscore -= 0.1
+        with exit_col[1]:
+            st.text_input(
+                "Current Value",
+                value=f"{st.session_state.short_exit_zscore:.1f}",
+                key="short_exit_display",
+                disabled=True,
+                label_visibility="collapsed"
             )
-        with short_exit_col[2]:
+        with exit_col[2]:
             if st.button("+", key="short_exit_inc"):
-                st.session_state.short_exit_zscore = min(st.session_state.get('short_exit_zscore', 0.0) + 0.1, 0.0)
+                st.session_state.short_exit_zscore = min(st.session_state.short_exit_zscore + 0.1, 0.0)
         
-        short_entry_rsi = st.slider("Entry RSI (≥)", 0, 100, 70)
-        short_exit_rsi = st.slider("Exit RSI (≤)", 0, 100, 30)
+        # RSI parameters
+        short_entry_rsi = st.slider("Entry RSI (≥)", 0, 100, 70, key="short_entry_rsi")
+        short_exit_rsi = st.slider("Exit RSI (≤)", 0, 100, 30, key="short_exit_rsi")
 
     if st.button("Run Backtest"):
         comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], zscore_lookback)
@@ -235,9 +459,9 @@ def backtest_page():
         
         for _, row in comparison_df.iterrows():
             # Long trade logic
-            if not in_long and row['Z-Score'] <= long_entry_zscore and row['RSI'] <= long_entry_rsi:
+            if not in_long and row['Z-Score'] <= st.session_state.long_entry_zscore and row['RSI'] <= long_entry_rsi:
                 in_long, long_entry_price = True, row['Ratio']
-            elif in_long and (row['Z-Score'] >= long_exit_zscore or row['RSI'] >= long_exit_rsi):
+            elif in_long and (row['Z-Score'] >= st.session_state.long_exit_zscore or row['RSI'] >= long_exit_rsi):
                 trades.append({
                     'Type': 'Long',
                     'Entry': long_entry_price,
@@ -249,9 +473,9 @@ def backtest_page():
                 in_long = False
             
             # Short trade logic
-            if not in_short and row['Z-Score'] >= short_entry_zscore and row['RSI'] >= short_entry_rsi:
+            if not in_short and row['Z-Score'] >= st.session_state.short_entry_zscore and row['RSI'] >= short_entry_rsi:
                 in_short, short_entry_price = True, row['Ratio']
-            elif in_short and (row['Z-Score'] <= short_exit_zscore or row['RSI'] <= short_exit_rsi):
+            elif in_short and (row['Z-Score'] <= st.session_state.short_exit_zscore or row['RSI'] <= short_exit_rsi):
                 trades.append({
                     'Type': 'Short',
                     'Entry': short_entry_price,
@@ -277,21 +501,31 @@ def backtest_page():
         else:
             st.warning("No trades were executed with current parameters.")
 
-# [Rest of the original functions (list_google_drive_folders, data_storage_page, etc.) remain unchanged]
+def logout():
+    """Clear the session state and log out the user."""
+    session_id = st.query_params.get('session_id', None)
+    if session_id and session_id in st.session_state['tokens']:
+        del st.session_state['tokens'][session_id]
+    st.success("Logged out successfully!")
 
 def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio("Go to", ["Google Drive Viewer", "Backtesting Page", "Data Storage"])
-    
-    session_id = st.query_params.get('session_id') or str(uuid.uuid4())
-    st.query_params['session_id'] = session_id
+
+    # Generate a unique session ID
+    session_id = st.query_params.get('session_id', None)
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        st.query_params['session_id'] = session_id
 
     if page == "Google Drive Viewer":
-        st.title("Google Drive Viewer")
-        if st.button("Login"):
+        st.title("Google Drive Folder Viewer")
+        if st.button("Login with Google"):
             creds = authenticate_google()
             if creds:
                 list_google_drive_folders(creds)
+        if st.button("Logout"):
+            logout()
     elif page == "Backtesting Page":
         backtest_page()
     elif page == "Data Storage":
