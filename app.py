@@ -394,15 +394,15 @@ def backtest_page():
     
     with col1:
         st.markdown("**Long Trade Parameters**")
-        long_entry_zscore = st.number_input("Long Entry Z-Score", value=1.0, key="long_entry_zscore")
-        long_exit_zscore = st.number_input("Long Exit Z-Score", value=0.0, key="long_exit_zscore")
+        long_entry_zscore = st.number_input("Long Entry Z-Score", value=-2.5, key="long_entry_zscore")
+        long_exit_zscore = st.number_input("Long Exit Z-Score", value=-1.5, key="long_exit_zscore")
         long_entry_rsi = st.slider("Long Entry RSI", 0, 100, 30, key="long_entry_rsi")
         long_exit_rsi = st.slider("Long Exit RSI", 0, 100, 70, key="long_exit_rsi")
     
     with col2:
         st.markdown("**Short Trade Parameters**")
-        short_entry_zscore = st.number_input("Short Entry Z-Score", value=-1.0, key="short_entry_zscore")
-        short_exit_zscore = st.number_input("Short Exit Z-Score", value=0.0, key="short_exit_zscore")
+        short_entry_zscore = st.number_input("Short Entry Z-Score", value=2.5, key="short_entry_zscore")
+        short_exit_zscore = st.number_input("Short Exit Z-Score", value=1.5, key="short_exit_zscore")
         short_entry_rsi = st.slider("Short Entry RSI", 0, 100, 70, key="short_entry_rsi")
         short_exit_rsi = st.slider("Short Exit RSI", 0, 100, 30, key="short_exit_rsi")
     
