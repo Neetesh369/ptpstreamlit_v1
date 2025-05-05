@@ -389,6 +389,14 @@ def backtest_page():
     with col2:
         rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14, key="rsi_period")
     
+    # Add RSI checkboxes
+    st.subheader("RSI Settings")
+    col1, col2 = st.columns(2)
+    with col1:
+        use_rsi_for_entry = st.checkbox("Use RSI for Entry", value=True, key="use_rsi_for_entry")
+    with col2:
+        use_rsi_for_exit = st.checkbox("Use RSI for Exit", value=True, key="use_rsi_for_exit")
+    
     # Create two columns for long and short trade inputs
     st.subheader("Trade Parameters")
     col1, col2 = st.columns(2)
@@ -397,15 +405,33 @@ def backtest_page():
         st.markdown("**Long Trade Parameters**")
         long_entry_zscore = st.number_input("Long Entry Z-Score", value=-2.5, key="long_entry_zscore")
         long_exit_zscore = st.number_input("Long Exit Z-Score", value=-1.5, key="long_exit_zscore")
-        long_entry_rsi = st.slider("Long Entry RSI", 0, 100, 30, key="long_entry_rsi")
-        long_exit_rsi = st.slider("Long Exit RSI", 0, 100, 70, key="long_exit_rsi")
+        
+        # Only show RSI parameters if RSI is enabled
+        if use_rsi_for_entry:
+            long_entry_rsi = st.slider("Long Entry RSI", 0, 100, 30, key="long_entry_rsi")
+        else:
+            long_entry_rsi = 0  # Default value, won't be used
+            
+        if use_rsi_for_exit:
+            long_exit_rsi = st.slider("Long Exit RSI", 0, 100, 70, key="long_exit_rsi")
+        else:
+            long_exit_rsi = 100  # Default value, won't be used
     
     with col2:
         st.markdown("**Short Trade Parameters**")
         short_entry_zscore = st.number_input("Short Entry Z-Score", value=2.5, key="short_entry_zscore")
         short_exit_zscore = st.number_input("Short Exit Z-Score", value=1.5, key="short_exit_zscore")
-        short_entry_rsi = st.slider("Short Entry RSI", 0, 100, 70, key="short_entry_rsi")
-        short_exit_rsi = st.slider("Short Exit RSI", 0, 100, 30, key="short_exit_rsi")
+        
+        # Only show RSI parameters if RSI is enabled
+        if use_rsi_for_entry:
+            short_entry_rsi = st.slider("Short Entry RSI", 0, 100, 70, key="short_entry_rsi")
+        else:
+            short_entry_rsi = 100  # Default value, won't be used
+            
+        if use_rsi_for_exit:
+            short_exit_rsi = st.slider("Short Exit RSI", 0, 100, 30, key="short_exit_rsi")
+        else:
+            short_exit_rsi = 0  # Default value, won't be used
     
     # Add stop loss parameters
     st.subheader("Stop Loss Parameters")
@@ -461,7 +487,7 @@ def backtest_page():
                 
                 # Check all exit conditions
                 zscore_exit = row['Z-Score'] <= long_exit_zscore
-                rsi_exit = row['RSI'] >= long_exit_rsi
+                rsi_exit = use_rsi_for_exit and row['RSI'] >= long_exit_rsi
                 time_exit = days_in_trade >= max_days_in_trade
                 target_exit = current_profit_pct >= target_profit_pct
                 stop_exit = current_profit_pct <= -stop_loss_pct
@@ -500,7 +526,7 @@ def backtest_page():
                 
                 # Check all exit conditions
                 zscore_exit = row['Z-Score'] >= short_exit_zscore
-                rsi_exit = row['RSI'] <= short_exit_rsi
+                rsi_exit = use_rsi_for_exit and row['RSI'] <= short_exit_rsi
                 time_exit = days_in_trade >= max_days_in_trade
                 target_exit = current_profit_pct >= target_profit_pct
                 stop_exit = current_profit_pct <= -stop_loss_pct
@@ -534,20 +560,34 @@ def backtest_page():
             
             # Check for new trade entries (only if not already in a trade)
             # Long trade logic
-            if not in_long_trade and not in_short_trade and row['Z-Score'] <= long_entry_zscore and row['RSI'] <= long_entry_rsi:
-                # Enter long trade
-                in_long_trade = True
-                long_entry_price = row['Ratio']
-                long_entry_date = row['Date']
-                long_entry_index = index
+            if not in_long_trade and not in_short_trade:
+                # Check Z-Score condition
+                zscore_condition = row['Z-Score'] <= long_entry_zscore
+                
+                # Check RSI condition only if RSI is enabled for entry
+                rsi_condition = not use_rsi_for_entry or row['RSI'] <= long_entry_rsi
+                
+                if zscore_condition and rsi_condition:
+                    # Enter long trade
+                    in_long_trade = True
+                    long_entry_price = row['Ratio']
+                    long_entry_date = row['Date']
+                    long_entry_index = index
             
-            # Short trade logic (only check if not in a long trade)
-            elif not in_long_trade and not in_short_trade and row['Z-Score'] >= short_entry_zscore and row['RSI'] >= short_entry_rsi:
-                # Enter short trade
-                in_short_trade = True
-                short_entry_price = row['Ratio']
-                short_entry_date = row['Date']
-                short_entry_index = index
+            # Short trade logic (only check if not in a trade)
+            elif not in_long_trade and not in_short_trade:
+                # Check Z-Score condition
+                zscore_condition = row['Z-Score'] >= short_entry_zscore
+                
+                # Check RSI condition only if RSI is enabled for entry
+                rsi_condition = not use_rsi_for_entry or row['RSI'] >= short_entry_rsi
+                
+                if zscore_condition and rsi_condition:
+                    # Enter short trade
+                    in_short_trade = True
+                    short_entry_price = row['Ratio']
+                    short_entry_date = row['Date']
+                    short_entry_index = index
         
         # Close any open trades at the end of the data
         if in_long_trade:
