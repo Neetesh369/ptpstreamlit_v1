@@ -484,28 +484,53 @@ def backtest_page():
         short_entry_date = None
         short_entry_index = None
         
+        # Debug information
+        debug_info = []
+        
         for index, row in comparison_df.iterrows():
             current_date = row['Date']
+            current_zscore = row['Z-Score']
+            current_rsi = row['RSI']
+            current_ratio = row['Ratio']
+            
+            # Debug data for this row
+            row_debug = {
+                'Date': current_date,
+                'Z-Score': current_zscore,
+                'RSI': current_rsi,
+                'Ratio': current_ratio,
+                'Action': 'None'
+            }
             
             # Check for long trade exit conditions if in a long trade
             if in_long_trade:
                 days_in_trade = (current_date - long_entry_date).days
-                current_profit_pct = ((row['Ratio'] - long_entry_price) / long_entry_price) * 100
+                current_profit_pct = ((current_ratio - long_entry_price) / long_entry_price) * 100
                 
                 # Check all exit conditions
-                zscore_exit = row['Z-Score'] <= long_exit_zscore
-                rsi_exit = use_rsi_for_exit and row['RSI'] >= long_exit_rsi
+                zscore_exit = current_zscore <= long_exit_zscore
+                rsi_exit = use_rsi_for_exit and current_rsi >= long_exit_rsi
                 time_exit = days_in_trade >= max_days_in_trade
                 target_exit = current_profit_pct >= target_profit_pct
                 stop_exit = current_profit_pct <= -stop_loss_pct
                 
-                if zscore_exit or rsi_exit or time_exit or target_exit or stop_exit:
-                    # Determine exit reason
-                    exit_reason = "Z-Score" if zscore_exit else "RSI" if rsi_exit else "Time" if time_exit else "Target" if target_exit else "Stop Loss"
-                    
+                # Determine exit reason with priority
+                exit_reason = None
+                if target_exit:
+                    exit_reason = "Target"
+                elif stop_exit:
+                    exit_reason = "Stop Loss"
+                elif time_exit:
+                    exit_reason = "Time"
+                elif zscore_exit:
+                    exit_reason = "Z-Score"
+                elif rsi_exit:
+                    exit_reason = "RSI"
+                
+                if exit_reason:
                     # Exit long trade
-                    exit_price = row['Ratio']
-                    exit_date = row['Date']
+                    exit_price = current_ratio
+                    exit_date = current_date
                     profit = exit_price - long_entry_price
                     profit_pct = (profit / long_entry_price) * 100
                     
@@ -521,30 +546,42 @@ def backtest_page():
                         'Exit Reason': exit_reason
                     })
                     
+                    row_debug['Action'] = f'Exit Long: {exit_reason}'
+                    
                     in_long_trade = False
                     long_entry_price = None
                     long_entry_date = None
                     long_entry_index = None
             
             # Check for short trade exit conditions if in a short trade
-            if in_short_trade:
+            elif in_short_trade:
                 days_in_trade = (current_date - short_entry_date).days
-                current_profit_pct = ((short_entry_price - row['Ratio']) / short_entry_price) * 100
+                current_profit_pct = ((short_entry_price - current_ratio) / short_entry_price) * 100
                 
                 # Check all exit conditions
-                zscore_exit = row['Z-Score'] >= short_exit_zscore
-                rsi_exit = use_rsi_for_exit and row['RSI'] <= short_exit_rsi
+                zscore_exit = current_zscore >= short_exit_zscore
+                rsi_exit = use_rsi_for_exit and current_rsi <= short_exit_rsi
                 time_exit = days_in_trade >= max_days_in_trade
                 target_exit = current_profit_pct >= target_profit_pct
                 stop_exit = current_profit_pct <= -stop_loss_pct
                 
-                if zscore_exit or rsi_exit or time_exit or target_exit or stop_exit:
-                    # Determine exit reason
-                    exit_reason = "Z-Score" if zscore_exit else "RSI" if rsi_exit else "Time" if time_exit else "Target" if target_exit else "Stop Loss"
-                    
+                # Determine exit reason with priority
+                exit_reason = None
+                if target_exit:
+                    exit_reason = "Target"
+                elif stop_exit:
+                    exit_reason = "Stop Loss"
+                elif time_exit:
+                    exit_reason = "Time"
+                elif zscore_exit:
+                    exit_reason = "Z-Score"
+                elif rsi_exit:
+                    exit_reason = "RSI"
+                
+                if exit_reason:
                     # Exit short trade
-                    exit_price = row['Ratio']
-                    exit_date = row['Date']
+                    exit_price = current_ratio
+                    exit_date = current_date
                     profit = short_entry_price - exit_price  # Profit calculation for short trades
                     profit_pct = (profit / short_entry_price) * 100
                     
@@ -560,41 +597,41 @@ def backtest_page():
                         'Exit Reason': exit_reason
                     })
                     
+                    row_debug['Action'] = f'Exit Short: {exit_reason}'
+                    
                     in_short_trade = False
                     short_entry_price = None
                     short_entry_date = None
                     short_entry_index = None
             
             # Check for new trade entries (only if not already in a trade)
-            # Long trade logic
-            if not in_long_trade and not in_short_trade:
-                # Check Z-Score condition
-                zscore_condition = row['Z-Score'] <= long_entry_zscore
-                
-                # Check RSI condition only if RSI is enabled for entry
-                rsi_condition = not use_rsi_for_entry or row['RSI'] <= long_entry_rsi
-                
-                if zscore_condition and rsi_condition:
-                    # Enter long trade
-                    in_long_trade = True
-                    long_entry_price = row['Ratio']
-                    long_entry_date = row['Date']
-                    long_entry_index = index
-            
-            # Short trade logic (only check if not in a trade)
             elif not in_long_trade and not in_short_trade:
-                # Check Z-Score condition
-                zscore_condition = row['Z-Score'] >= short_entry_zscore
+                # Check long trade entry conditions
+                long_zscore_condition = current_zscore <= long_entry_zscore
+                long_rsi_condition = not use_rsi_for_entry or current_rsi <= long_entry_rsi
                 
-                # Check RSI condition only if RSI is enabled for entry
-                rsi_condition = not use_rsi_for_entry or row['RSI'] >= short_entry_rsi
+                # Check short trade entry conditions
+                short_zscore_condition = current_zscore >= short_entry_zscore
+                short_rsi_condition = not use_rsi_for_entry or current_rsi >= short_entry_rsi
                 
-                if zscore_condition and rsi_condition:
-                    # Enter short trade
+                # Enter long trade if conditions are met
+                if long_zscore_condition and long_rsi_condition:
+                    in_long_trade = True
+                    long_entry_price = current_ratio
+                    long_entry_date = current_date
+                    long_entry_index = index
+                    row_debug['Action'] = 'Enter Long'
+                
+                # Enter short trade if conditions are met
+                elif short_zscore_condition and short_rsi_condition:
                     in_short_trade = True
-                    short_entry_price = row['Ratio']
-                    short_entry_date = row['Date']
+                    short_entry_price = current_ratio
+                    short_entry_date = current_date
                     short_entry_index = index
+                    row_debug['Action'] = 'Enter Short'
+            
+            # Add debug info for this row
+            debug_info.append(row_debug)
         
         # Close any open trades at the end of the data
         if in_long_trade:
@@ -640,6 +677,14 @@ def backtest_page():
             trades_df = pd.DataFrame(trades)
             st.header("Trade Results")
             st.dataframe(trades_df)
+            
+            # Create a debug dataframe
+            debug_df = pd.DataFrame(debug_info)
+            
+            # Show debug information (only rows with actions)
+            st.header("Trade Actions Log")
+            action_debug_df = debug_df[debug_df['Action'] != 'None']
+            st.dataframe(action_debug_df)
             
             # Calculate trade summary metrics
             total_trades = len(trades_df)
