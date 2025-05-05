@@ -128,28 +128,28 @@ def calculate_rsi(series, window=14):
     return rsi
 
 def list_google_drive_folders(creds):
-    """Read and compare stock price data from CSV files in the 'nsetestnownownow' folder."""
+    """Read and compare stock price data from CSV files in the 'nsetestnow' folder."""
     try:
         service = build('drive', 'v3', credentials=creds)
         
-        # Find the folder ID of 'nsetestnownownow'
-        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetestnownownow'"
+        # Find the folder ID of 'nsetestnow'
+        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetestnow'"
         folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
         folders = folder_results.get('files', [])
         
         if not folders:
-            st.write("Folder 'nsetestnownownow' not found.")
+            st.write("Folder 'nsetestnow' not found.")
             return
         
-        nsetestnownownow_folder_id = folders[0]['id']
+        nsetestnow_folder_id = folders[0]['id']
         
-        # Find all CSV files in the 'nsetestnownownow' folder
-        file_query = f"'{nsetestnownownow_folder_id}' in parents and mimeType='text/csv'"
+        # Find all CSV files in the 'nsetestnow' folder
+        file_query = f"'{nsetestnow_folder_id}' in parents and mimeType='text/csv'"
         file_results = service.files().list(q=file_query, fields="files(id, name)").execute()
         files = file_results.get('files', [])
         
         if not files:
-            st.write("No CSV files found in the 'nsetestnownownow' folder.")
+            st.write("No CSV files found in the 'nsetestnow' folder.")
             return
         
         # Store the list of CSV files in session_state
@@ -223,17 +223,17 @@ def download_historical_data(symbol_file_path, output_folder_path, start_date, e
 def clean_and_upload_files(creds, output_folder_path):
     """Clean CSV files (remove first two rows) and upload them to Google Drive."""
     try:
-        # Find the folder ID of 'nsetestnownownow'
+        # Find the folder ID of 'nsetestnow'
         service = build('drive', 'v3', credentials=creds)
-        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetestnownownow'"
+        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetestnow'"
         folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
         folders = folder_results.get('files', [])
         
         if not folders:
-            st.error("Folder 'nsetestnownownow' not found.")
+            st.error("Folder 'nsetestnow' not found.")
             return
         
-        nsetestnownownow_folder_id = folders[0]['id']
+        nsetestnow_folder_id = folders[0]['id']
 
         # Process each file in the output folder
         for file_name in os.listdir(output_folder_path):
@@ -257,7 +257,7 @@ def clean_and_upload_files(creds, output_folder_path):
                 st.success(f"Cleaned {file_name} (removed first two rows).")
                 
                 # Upload the cleaned file to Google Drive
-                upload_file_to_drive(creds, file_path, file_name, folder_id=nsetestnownownow_folder_id)
+                upload_file_to_drive(creds, file_path, file_name, folder_id=nsetestnow_folder_id)
             except Exception as e:
                 st.error(f"Error processing {file_name}: {e}")
     except Exception as e:
