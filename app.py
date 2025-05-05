@@ -351,9 +351,11 @@ def backtest_page():
     with col1:
         st.markdown("**Long Trade Parameters**")
         
-        # Initialize session state for long entry
+        # Initialize session state with proper defaults
         if 'long_entry_zscore' not in st.session_state:
             st.session_state.long_entry_zscore = -2.5
+        if 'long_exit_zscore' not in st.session_state:
+            st.session_state.long_exit_zscore = 0.0
         
         # Long Entry Z-Score (must be ≤ 0)
         st.write("Entry Z-Score (≤ 0)")
@@ -374,9 +376,6 @@ def backtest_page():
                 st.session_state.long_entry_zscore = min(st.session_state.long_entry_zscore + 0.1, 0.0)
         
         # Long Exit Z-Score (must be ≥ 0)
-        if 'long_exit_zscore' not in st.session_state:
-            st.session_state.long_exit_zscore = 0.0
-        
         st.write("Exit Z-Score (≥ 0)")
         exit_col = st.columns([1, 4, 1])
         with exit_col[0]:
@@ -401,9 +400,11 @@ def backtest_page():
     with col2:
         st.markdown("**Short Trade Parameters**")
         
-        # Initialize session state for short entry
+        # Initialize session state with proper defaults
         if 'short_entry_zscore' not in st.session_state:
             st.session_state.short_entry_zscore = 2.5
+        if 'short_exit_zscore' not in st.session_state:
+            st.session_state.short_exit_zscore = 0.0
         
         # Short Entry Z-Score (must be ≥ 0)
         st.write("Entry Z-Score (≥ 0)")
@@ -424,9 +425,6 @@ def backtest_page():
                 st.session_state.short_entry_zscore += 0.1
         
         # Short Exit Z-Score (must be ≤ 0)
-        if 'short_exit_zscore' not in st.session_state:
-            st.session_state.short_exit_zscore = 0.0
-        
         st.write("Exit Z-Score (≤ 0)")
         exit_col = st.columns([1, 4, 1])
         with exit_col[0]:
