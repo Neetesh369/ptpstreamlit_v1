@@ -1,12 +1,8 @@
 import streamlit as st
-import os
 import pandas as pd
-import io
 import numpy as np
 import yfinance as yf
-import uuid
 from datetime import datetime
-import json
 
 # Inject custom CSS to use Inter font
 st.markdown(
@@ -51,9 +47,6 @@ if 'csv_files' not in st.session_state:
 def save_dataframe(symbol, df):
     """Save a dataframe to Streamlit's persistent storage."""
     try:
-        # Convert dataframe to CSV string
-        csv_string = df.to_csv(index=False)
-        
         # Store in session state
         st.session_state['dataframes'][symbol] = df
         
@@ -74,74 +67,6 @@ def load_dataframe(symbol):
     else:
         return None
 
-# If modifying these SCOPES, delete the file token.json.
-SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']
-
-# Define the redirect URI (must match the one in Google Cloud Console)
-REDIRECT_URI = 'https://ptpapp-qjxrob2c9ydjxeroncdq9z.streamlit.app/'
-
-# Dictionary to store tokens per session
-if 'tokens' not in st.session_state:
-    st.session_state['tokens'] = {}
-
-def authenticate_google():
-    """Authenticate the user using Google OAuth and return credentials."""
-    # Get the session ID (unique for each user)
-    session_id = st.query_params.get('session_id', None)
-    if not session_id:
-        st.error("Session ID not found. Please reload the page.")
-        return None
-
-    # Check if tokens exist for this session
-    if session_id in st.session_state['tokens']:
-        creds = Credentials.from_authorized_user_info(st.session_state['tokens'][session_id])
-        if creds and creds.valid:
-            return creds
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            st.session_state['tokens'][session_id] = {
-                'token': creds.token,
-                'refresh_token': creds.refresh_token,
-                'token_uri': creds.token_uri,
-                'client_id': creds.client_id,
-                'client_secret': creds.client_secret,
-                'scopes': creds.scopes
-            }
-            return creds
-
-    # If no valid tokens, start the OAuth flow
-    if not os.path.exists('credentials.json'):
-        st.error("Error: 'credentials.json' file is missing. Please set up Google OAuth credentials.")
-        return None
-
-    flow = InstalledAppFlow.from_client_secrets_file(
-        'credentials.json', SCOPES, redirect_uri=REDIRECT_URI)
-    auth_url, _ = flow.authorization_url(prompt='consent')
-    st.write("Please go to the following URL to authorize the application:")
-    st.write(auth_url)
-    st.write("After authorization, you will be redirected back to this app.")
-
-    # Check if the authorization code is in the URL
-    query_params = st.query_params
-    if 'code' in query_params:
-        auth_code = query_params['code']
-        flow.fetch_token(code=auth_code)
-        creds = flow.credentials
-        # Store tokens in session state
-        st.session_state['tokens'][session_id] = {
-            'token': creds.token,
-            'refresh_token': creds.refresh_token,
-            'token_uri': creds.token_uri,
-            'client_id': creds.client_id,
-            'client_secret': creds.client_secret,
-            'scopes': creds.scopes
-        }
-        st.success("Logged in successfully!")
-        return creds
-    else:
-        st.warning("Waiting for authorization code...")
-        return None
-
 def calculate_zscore(series, window=50):
     """Calculate the Z-score for a given series using a rolling window."""
     rolling_mean = series.rolling(window=window).mean()
@@ -157,61 +82,6 @@ def calculate_rsi(series, window=14):
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
-
-def list_google_drive_folders(creds):
-    """Read and compare stock price data from CSV files in the 'nsetestnow' folder."""
-    try:
-        service = build('drive', 'v3', credentials=creds)
-        
-        # Find the folder ID of 'nsetestnow'
-        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetestnow'"
-        folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
-        folders = folder_results.get('files', [])
-        
-        if not folders:
-            st.write("Folder 'nsetestnow' not found.")
-            return
-        
-        nsetestnow_folder_id = folders[0]['id']
-        
-        # Find all CSV files in the 'nsetestnow' folder
-        file_query = f"'{nsetestnow_folder_id}' in parents and mimeType='text/csv'"
-        file_results = service.files().list(q=file_query, fields="files(id, name)").execute()
-        files = file_results.get('files', [])
-        
-        if not files:
-            st.write("No CSV files found in the 'nsetestnow' folder.")
-            return
-        
-        # Store the list of CSV files in session_state
-        st.session_state['csv_files'] = [file['name'] for file in files]
-        
-        # Download and read the CSV files
-        dataframes = {}
-        for file in files:
-            try:
-                file_id = file['id']
-                request = service.files().get_media(fileId=file_id)
-                fh = io.BytesIO()
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while not done:
-                    status, done = downloader.next_chunk()
-                fh.seek(0)
-                
-                # Read the CSV file with explicit delimiter and error handling
-                df = pd.read_csv(fh, delimiter=',', encoding='utf-8')
-                dataframes[file['name']] = df
-                st.write(f"Debug: Successfully read {file['name']} with {len(df)} rows.")
-            except Exception as e:
-                st.error(f"Error reading {file['name']}: {e}")
-                return
-        
-        # Store the dataframes in session_state
-        st.session_state['dataframes'] = dataframes
-        
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
 
 def download_historical_data(symbol_file_path, start_date, end_date):
     """Download historical data from Yahoo Finance, clean it, and store in Streamlit's persistent storage."""
@@ -252,73 +122,6 @@ def download_historical_data(symbol_file_path, start_date, end_date):
                 
         except Exception as e:
             st.error(f"Error downloading data for {symbol}: {e}")
-
-def clean_and_upload_files(creds, output_folder_path):
-    """Clean CSV files (remove first two rows) and upload them to Google Drive."""
-    try:
-        # Find the folder ID of 'nsetestnow'
-        service = build('drive', 'v3', credentials=creds)
-        folder_query = "mimeType='application/vnd.google-apps.folder' and name='nsetestnow'"
-        folder_results = service.files().list(q=folder_query, fields="files(id, name)").execute()
-        folders = folder_results.get('files', [])
-        
-        if not folders:
-            st.error("Folder 'nsetestnow' not found.")
-            return
-        
-        nsetestnow_folder_id = folders[0]['id']
-
-        # Process each file in the output folder
-        for file_name in os.listdir(output_folder_path):
-            file_path = os.path.join(output_folder_path, file_name)
-            
-            # Read the CSV file
-            try:
-                df = pd.read_csv(file_path)
-                
-                # Remove the first two rows (index 0 and 1)
-                if len(df) > 2:  # Check if there are at least 3 rows
-                    df = df.drop([0, 1])  # Drop the first two rows
-                elif len(df) > 1:  # If only 2 rows, drop both
-                    df = df.drop([0, 1])
-                else:  # If only 1 row, skip this file
-                    st.warning(f"File {file_name} has only 1 row. Skipping...")
-                    continue
-                
-                # Save the cleaned file back to the same path
-                df.to_csv(file_path, index=False)
-                st.success(f"Cleaned {file_name} (removed first two rows).")
-                
-                # Upload the cleaned file to Google Drive
-                upload_file_to_drive(creds, file_path, file_name, folder_id=nsetestnow_folder_id)
-            except Exception as e:
-                st.error(f"Error processing {file_name}: {e}")
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
-
-def upload_file_to_drive(creds, file_path, file_name, folder_id=None):
-    """Upload a file to Google Drive."""
-    try:
-        service = build('drive', 'v3', credentials=creds)
-        
-        # Define file metadata
-        file_metadata = {
-            'name': file_name,
-        }
-        if folder_id:
-            file_metadata['parents'] = [folder_id]
-        
-        # Upload the file
-        media = MediaFileUpload(file_path, resumable=True)
-        file = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id'
-        ).execute()
-        
-        st.success(f"File uploaded successfully! File ID: {file.get('id')}")
-    except Exception as e:
-        st.error(f"An error occurred while uploading the file: {e}")
 
 def clean_uploaded_data(df):
     """Clean the uploaded data by removing the first two rows if they exist."""
@@ -496,12 +299,12 @@ def backtest_page():
         
         # Only show RSI parameters if RSI is enabled
         if use_rsi_for_entry:
-            short_entry_rsi = st.slider("Long Entry RSI", 0, 100, 70, key="short_entry_rsi")
+            short_entry_rsi = st.slider("Short Entry RSI", 0, 100, 70, key="short_entry_rsi")
         else:
             short_entry_rsi = 100  # Default value, won't be used
             
         if use_rsi_for_exit:
-            short_exit_rsi = st.slider("Long Exit RSI", 0, 100, 30, key="short_exit_rsi")
+            short_exit_rsi = st.slider("Short Exit RSI", 0, 100, 30, key="short_exit_rsi")
         else:
             short_exit_rsi = 0  # Default value, won't be used
     
