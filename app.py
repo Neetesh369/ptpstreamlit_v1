@@ -452,6 +452,12 @@ def backtest_page():
     
     # Add a "Go" button
     if st.button("Go"):
+        # Calculate Z-Score of Ratio
+        comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=zscore_lookback)
+        
+        # Calculate RSI of Ratio
+        comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
+        
         # First perform correlation and cointegration analysis
         st.header("Pair Statistics")
         
@@ -510,30 +516,12 @@ def backtest_page():
                     st.success("**Result:** Cointegrated (p < 0.05)")
                 else:
                     st.warning("**Result:** Not cointegrated (p >= 0.05)")
-            
-            # Add a visual separator
-            st.markdown("---")
-            
-        except Exception as e:
-            st.error(f"Error in correlation/cointegration analysis: {e}")
         
-        # Calculate Z-Score of Ratio
-        comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=zscore_lookback)
+        # Add a visual separator
+        st.markdown("---")
         
-        # Calculate RSI of Ratio
-        comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
-        
-        # Convert Date column to datetime if it's not already
-        if not pd.api.types.is_datetime64_any_dtype(comparison_df['Date']):
-            comparison_df['Date'] = pd.to_datetime(comparison_df['Date'])
-        
-        # Sort by Date (oldest first) for proper trade simulation
-        comparison_df = comparison_df.sort_values(by='Date', ascending=True)
-        
-        # Display the comparison table (most recent 300 rows)
-        st.header("Stock Price Comparison (Last 300 Rows)")
-        display_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
-        st.dataframe(display_df, hide_index=True)
+    except Exception as e:
+        st.error(f"Error in correlation/cointegration analysis: {e}")
         
         # Calculate trade results
         trades = []
