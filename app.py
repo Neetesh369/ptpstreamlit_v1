@@ -85,43 +85,19 @@ def calculate_rsi(series, window=14):
 
 def clean_dataframe(df, symbol_name):
     """
-    Clean the dataframe by identifying and removing problematic rows.
-    This function uses multiple strategies to identify and remove the row with symbol in all columns.
+    Clean the dataframe by removing the first row (index 0).
+    This follows the exact same logic from the previous working code.
     """
     # Display the original dataframe for debugging
     st.write(f"Original dataframe for {symbol_name}:")
     st.dataframe(df.head(5))
     
-    # Strategy 1: Check for rows where all or most columns have the same value
-    for idx, row in df.iterrows():
-        # Count how many columns have the symbol name
-        symbol_count = sum(str(val).strip() == symbol_name for val in row)
-        
-        # If most columns have the symbol name, this is likely the problematic row
-        if symbol_count >= len(df.columns) / 2:
-            st.write(f"Found problematic row at index {idx} with {symbol_count} columns matching {symbol_name}")
-            # Remove this row
-            df = df.drop(idx).reset_index(drop=True)
-            break
-    
-    # Strategy 2: If the first strategy didn't work, try removing the second row (index 1)
-    # This is a fallback strategy based on the observation that the problematic row is often the second row
-    if len(df) > 1:
-        # Check if the second row might be problematic (contains non-numeric values in numeric columns)
-        second_row = df.iloc[1]
-        numeric_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-        non_numeric_count = 0
-        
-        for col in numeric_columns:
-            if col in df.columns:
-                try:
-                    float(second_row[col])
-                except (ValueError, TypeError):
-                    non_numeric_count += 1
-        
-        if non_numeric_count > 0:
-            st.write(f"Second row contains {non_numeric_count} non-numeric values in numeric columns")
-            df = pd.concat([df.iloc[[0]], df.iloc[2:]]).reset_index(drop=True)
+    # Remove the first row (index 0) if there are at least 2 rows
+    if len(df) > 1:  # Check if there are at least 2 rows
+        df = df.drop(0).reset_index(drop=True)  # Drop the first row and reset index
+        st.success(f"Removed first row from {symbol_name}.")
+    else:
+        st.warning(f"File {symbol_name} has only 1 row. Skipping...")
     
     # Display the cleaned dataframe for debugging
     st.write(f"Cleaned dataframe for {symbol_name}:")
@@ -169,7 +145,7 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             st.error(f"Error downloading data for {symbol}: {e}")
 
 def manual_clean_all_data():
-    """Manually clean all stored dataframes by removing the second row."""
+    """Manually clean all stored dataframes by removing the first row (index 0)."""
     if not st.session_state['csv_files']:
         st.warning("No data available to clean.")
         return
@@ -177,29 +153,28 @@ def manual_clean_all_data():
     cleaned_count = 0
     for file_name in st.session_state['csv_files']:
         df = load_dataframe(file_name)
-        if df is not None and len(df) > 1:
-            # Get symbol name from file name
-            symbol_name = file_name
-            if symbol_name.endswith('.csv'):
-                symbol_name = symbol_name[:-4]
-            
+        if df is not None:
             # Display the first few rows before cleaning
             st.write(f"**Before cleaning {file_name}:**")
             st.dataframe(df.head(3))
             
-            # Simply remove the second row (index 1)
-            cleaned_df = pd.concat([df.iloc[[0]], df.iloc[2:]]).reset_index(drop=True)
-            
-            # Display the first few rows after cleaning
-            st.write(f"**After cleaning {file_name}:**")
-            st.dataframe(cleaned_df.head(3))
-            
-            # Save back to session state
-            save_dataframe(file_name, cleaned_df)
-            cleaned_count += 1
+            # Remove the first row (index 0) if there are at least 2 rows
+            if len(df) > 1:  # Check if there are at least 2 rows
+                df = df.drop(0).reset_index(drop=True)  # Drop the first row and reset index
+                
+                # Display the first few rows after cleaning
+                st.write(f"**After cleaning {file_name}:**")
+                st.dataframe(df.head(3))
+                
+                # Save back to session state
+                save_dataframe(file_name, df)
+                cleaned_count += 1
+                st.success(f"Removed first row from {file_name}.")
+            else:
+                st.warning(f"File {file_name} has only 1 row. Skipping...")
     
     if cleaned_count > 0:
-        st.success(f"Successfully cleaned {cleaned_count} files by removing the second row.")
+        st.success(f"Successfully cleaned {cleaned_count} files by removing the first row.")
     else:
         st.info("No files needed cleaning.")
 
@@ -220,7 +195,7 @@ def data_storage_page():
         download_historical_data(symbol_file_path, start_date, end_date)
 
     # Add a button to manually clean all data
-    if st.button("Manually Remove Second Row From All Data"):
+    if st.button("Remove First Row From All Data"):
         manual_clean_all_data()
 
     # View stored data
