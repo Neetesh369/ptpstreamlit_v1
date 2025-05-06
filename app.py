@@ -355,101 +355,6 @@ def backtest_page():
         st.error(f"Error extracting columns: {e}. Ensure the CSV files have 'Date' and 'Close' columns.")
         return
     
-    # Merge the data for correlation analysis
-    try:
-        df1_close = df1[['Date', 'Close']].copy()
-        df2_close = df2[['Date', 'Close']].copy()
-        
-        # Convert Date column to datetime if it's not already
-        if not pd.api.types.is_datetime64_any_dtype(df1_close['Date']):
-            df1_close['Date'] = pd.to_datetime(df1_close['Date'])
-        if not pd.api.types.is_datetime64_any_dtype(df2_close['Date']):
-            df2_close['Date'] = pd.to_datetime(df2_close['Date'])
-        
-        # Merge the data on Date for correlation analysis
-        corr_df = pd.merge(df1_close, df2_close, on='Date', how='inner', suffixes=('_1', '_2'))
-        
-        # Rename columns for clarity
-        corr_df.rename(columns={
-            'Close_1': stock1,
-            'Close_2': stock2
-        }, inplace=True)
-        
-        # Sort by Date (oldest first)
-        corr_df = corr_df.sort_values(by='Date', ascending=True)
-        
-        # Calculate correlation
-        correlation = corr_df[stock1].corr(corr_df[stock2])
-        
-        # Run cointegration test
-        coint_result, spread, model = test_cointegration(corr_df[stock1], corr_df[stock2])
-        
-        # Display correlation and cointegration results
-        st.header("Pair Statistics")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Correlation Analysis")
-            st.write(f"**Pearson Correlation:** {correlation:.4f}")
-            
-            # Interpret correlation
-            if abs(correlation) > 0.8:
-                correlation_strength = "Very Strong"
-            elif abs(correlation) > 0.6:
-                correlation_strength = "Strong"
-            elif abs(correlation) > 0.4:
-                correlation_strength = "Moderate"
-            elif abs(correlation) > 0.2:
-                correlation_strength = "Weak"
-            else:
-                correlation_strength = "Very Weak"
-            
-            correlation_direction = "Positive" if correlation > 0 else "Negative"
-            st.write(f"**Interpretation:** {correlation_direction} {correlation_strength} correlation")
-        
-        with col2:
-            st.subheader("Cointegration Analysis")
-            st.write(f"**ADF Test Statistic:** {coint_result['ADF Statistic']:.4f}")
-            st.write(f"**p-value:** {coint_result['p-value']:.4f}")
-            
-            # Interpret cointegration
-            if coint_result['Is Cointegrated']:
-                st.success("**Result:** Cointegrated (p < 0.05)")
-            else:
-                st.warning("**Result:** Not cointegrated (p >= 0.05)")
-        
-        # Create a scatter plot of prices
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.scatter(corr_df[stock1], corr_df[stock2], alpha=0.5)
-        ax.set_xlabel(stock1)
-        ax.set_ylabel(stock2)
-        ax.set_title(f'Price Scatter Plot: {stock1} vs {stock2}')
-        
-        # Add regression line
-        slope, intercept, r_value, p_value, std_err = stats.linregress(corr_df[stock1], corr_df[stock2])
-        x = np.array([corr_df[stock1].min(), corr_df[stock1].max()])
-        y = intercept + slope * x
-        ax.plot(x, y, 'r-', label=f'y = {slope:.2f}x + {intercept:.2f}')
-        ax.legend()
-        
-        st.pyplot(fig)
-        
-        # Plot the spread (residuals)
-        fig, ax = plt.subplots(figsize=(10, 6))
-        spread_series = pd.Series(spread, index=corr_df['Date'])
-        ax.plot(spread_series)
-        ax.axhline(y=0, color='r', linestyle='-')
-        ax.set_title('Spread (Residuals) Over Time')
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Spread')
-        st.pyplot(fig)
-        
-        # Add a visual separator
-        st.markdown("---")
-        
-    except Exception as e:
-        st.error(f"Error in correlation analysis: {e}")
-    
     # Merge the data on Date
     try:
         comparison_df = pd.merge(df1, df2, on='Date', how='outer', suffixes=('_1', '_2'))
@@ -471,8 +376,10 @@ def backtest_page():
     col1, col2 = st.columns(2)
     with col1:
         zscore_lookback = st.number_input("Z-Score Lookback Period (days)", min_value=1, value=50, key="zscore_lookback")
+        correlation_lookback = st.number_input("Correlation Lookback Period (days)", min_value=30, value=100, key="correlation_lookback")
     with col2:
         rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14, key="rsi_period")
+        cointegration_lookback = st.number_input("Cointegration Lookback Period (days)", min_value=30, value=100, key="cointegration_lookback")
     
     # Add RSI checkboxes with a more visible style
     st.markdown("### RSI Settings")
@@ -545,6 +452,77 @@ def backtest_page():
         
         # Calculate RSI of Ratio
         comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
+        
+        # Perform correlation and cointegration analysis with lookback periods
+        st.header("Pair Statistics")
+        
+        try:
+            # Convert Date column to datetime if it's not already
+            if not pd.api.types.is_datetime64_any_dtype(comparison_df['Date']):
+                comparison_df['Date'] = pd.to_datetime(comparison_df['Date'])
+            
+            # Sort by Date (oldest first)
+            comparison_df = comparison_df.sort_values(by='Date', ascending=True)
+            
+            # Use the lookback periods for correlation and cointegration
+            if len(comparison_df) > correlation_lookback:
+                corr_df = comparison_df.tail(correlation_lookback)
+            else:
+                corr_df = comparison_df
+                st.warning(f"Not enough data for specified correlation lookback period. Using all available data ({len(comparison_df)} days).")
+            
+            if len(comparison_df) > cointegration_lookback:
+                coint_df = comparison_df.tail(cointegration_lookback)
+            else:
+                coint_df = comparison_df
+                st.warning(f"Not enough data for specified cointegration lookback period. Using all available data ({len(comparison_df)} days).")
+            
+            # Calculate correlation
+            correlation = corr_df[stock1].corr(corr_df[stock2])
+            
+            # Run cointegration test
+            coint_result, spread, model = test_cointegration(coint_df[stock1], coint_df[stock2])
+            
+            # Display results in two columns
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Correlation Analysis")
+                st.write(f"**Lookback Period:** {len(corr_df)} days")
+                st.write(f"**Pearson Correlation:** {correlation:.4f}")
+                
+                # Interpret correlation
+                if abs(correlation) > 0.8:
+                    correlation_strength = "Very Strong"
+                elif abs(correlation) > 0.6:
+                    correlation_strength = "Strong"
+                elif abs(correlation) > 0.4:
+                    correlation_strength = "Moderate"
+                elif abs(correlation) > 0.2:
+                    correlation_strength = "Weak"
+                else:
+                    correlation_strength = "Very Weak"
+                
+                correlation_direction = "Positive" if correlation > 0 else "Negative"
+                st.write(f"**Interpretation:** {correlation_direction} {correlation_strength} correlation")
+            
+            with col2:
+                st.subheader("Cointegration Analysis")
+                st.write(f"**Lookback Period:** {len(coint_df)} days")
+                st.write(f"**ADF Test Statistic:** {coint_result['ADF Statistic']:.4f}")
+                st.write(f"**p-value:** {coint_result['p-value']:.4f}")
+                
+                # Interpret cointegration
+                if coint_result['Is Cointegrated']:
+                    st.success("**Result:** Cointegrated (p < 0.05)")
+                else:
+                    st.warning("**Result:** Not cointegrated (p >= 0.05)")
+            
+            # Add a visual separator
+            st.markdown("---")
+            
+        except Exception as e:
+            st.error(f"Error in correlation/cointegration analysis: {e}")
         
         # Convert Date column to datetime if it's not already
         if not pd.api.types.is_datetime64_any_dtype(comparison_df['Date']):
