@@ -84,7 +84,7 @@ def calculate_rsi(series, window=14):
     return rsi
 
 def download_historical_data(symbol_file_path, start_date, end_date):
-    """Download historical data from Yahoo Finance, clean it, and store in Streamlit's persistent storage."""
+    """Download historical data from Yahoo Finance and store in Streamlit's persistent storage."""
     try:
         # Read the symbol file
         symbols = pd.read_csv(symbol_file_path, header=None).iloc[:, 0].tolist()
@@ -96,7 +96,8 @@ def download_historical_data(symbol_file_path, start_date, end_date):
     for symbol in symbols:
         try:
             st.write(f"Downloading data for {symbol}...")
-            data = yf.download(symbol, start=start_date, end=end_date)
+            # Use header=0 to ensure only the first row is treated as header
+            data = yf.download(symbol, start=start_date, end=end_date, header=0)
 
             # If no data is retrieved, skip saving
             if data.empty:
@@ -119,18 +120,33 @@ def download_historical_data(symbol_file_path, start_date, end_date):
         except Exception as e:
             st.error(f"Error downloading data for {symbol}: {e}")
 
-def force_remove_second_row(df):
+def clean_header_row(df, symbol_name):
     """
-    Forcibly remove the second row (index 1) from the dataframe.
-    This is a direct approach when other methods fail.
+    Clean the dataframe by removing the problematic header row with symbol in all columns.
+    This specifically targets the Yahoo Finance format issue.
     """
-    if len(df) > 1:
-        # Create a new dataframe without the second row
-        return pd.concat([df.iloc[[0]], df.iloc[2:]]).reset_index(drop=True)
+    # Extract symbol name without .csv extension if present
+    if symbol_name.endswith('.csv'):
+        symbol_name = symbol_name[:-4]
+    
+    # Check if the dataframe has column names that match the symbol
+    columns_with_symbol = [col for col in df.columns if str(col) == symbol_name]
+    
+    if columns_with_symbol:
+        # If columns contain the symbol name, we need to reset the header
+        # First, save the original column names
+        original_columns = df.columns.tolist()
+        
+        # Drop the row with symbol in all columns (usually the first row)
+        df = df.iloc[1:].reset_index(drop=True)
+        
+        # Restore the original column names
+        df.columns = original_columns
+    
     return df
 
-def remove_second_row_from_all_data():
-    """Forcibly remove the second row from all stored dataframes."""
+def remove_symbol_rows_from_all_data():
+    """Clean all stored dataframes by removing rows with symbol in all columns."""
     if not st.session_state['csv_files']:
         st.warning("No data available to clean.")
         return
@@ -138,13 +154,18 @@ def remove_second_row_from_all_data():
     cleaned_count = 0
     for file_name in st.session_state['csv_files']:
         df = load_dataframe(file_name)
-        if df is not None and len(df) > 1:
+        if df is not None:
+            # Get symbol name from file name
+            symbol_name = file_name
+            if symbol_name.endswith('.csv'):
+                symbol_name = symbol_name[:-4]
+            
             # Display the first few rows before cleaning
             st.write(f"**Before cleaning {file_name}:**")
             st.dataframe(df.head(3))
             
-            # Forcibly remove the second row
-            cleaned_df = force_remove_second_row(df)
+            # Clean the dataframe
+            cleaned_df = clean_header_row(df, symbol_name)
             
             # Display the first few rows after cleaning
             st.write(f"**After cleaning {file_name}:**")
@@ -155,7 +176,7 @@ def remove_second_row_from_all_data():
             cleaned_count += 1
     
     if cleaned_count > 0:
-        st.success(f"Successfully cleaned {cleaned_count} files by removing the second row.")
+        st.success(f"Successfully cleaned {cleaned_count} files.")
     else:
         st.info("No files needed cleaning.")
 
@@ -176,8 +197,8 @@ def data_storage_page():
         download_historical_data(symbol_file_path, start_date, end_date)
 
     # Add a button to remove the second row from all data
-    if st.button("Remove Second Row From All Data"):
-        remove_second_row_from_all_data()
+    if st.button("Remove Symbol Rows From All Data"):
+        remove_symbol_rows_from_all_data()
 
     # View stored data
     if st.button("View Stored Data"):
@@ -201,11 +222,16 @@ def data_storage_page():
             # Read the uploaded file
             df = pd.read_csv(uploaded_file)
             
-            # Clean the data by forcibly removing the second row
-            df = force_remove_second_row(df)
+            # Get the symbol name from the file name
+            file_name = uploaded_file.name
+            symbol_name = file_name
+            if symbol_name.endswith('.csv'):
+                symbol_name = symbol_name[:-4]
+            
+            # Clean the dataframe
+            df = clean_header_row(df, symbol_name)
         
             # Save to Streamlit's persistent storage
-            file_name = uploaded_file.name
             if save_dataframe(file_name, df):
                 st.success(f"File {file_name} uploaded and cleaned successfully")
             else:
