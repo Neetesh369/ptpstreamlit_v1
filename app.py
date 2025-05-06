@@ -63,7 +63,15 @@ def save_dataframe(symbol, df):
 def load_dataframe(symbol):
     """Load a dataframe from Streamlit's persistent storage."""
     if symbol in st.session_state['dataframes']:
-        return st.session_state['dataframes'][symbol]
+        df = st.session_state['dataframes'][symbol]
+        
+        # If the dataframe has standard headers flag, ensure column names are set correctly
+        if df.attrs.get('use_standard_headers', False) and len(df.columns) == 7:
+            # Create a copy to avoid modifying the original
+            df_copy = df.copy()
+            df_copy.columns = ['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+            return df_copy
+        return df
     else:
         return None
 
@@ -129,8 +137,8 @@ def clean_uploaded_data(df):
         return df.iloc[2:].reset_index(drop=True)
     return df
 
-def remove_headers_from_all_data():
-    """Remove header rows from all stored dataframes but keep column names for display."""
+def standardize_headers_for_all_data():
+    """Standardize header rows for all stored dataframes."""
     if not st.session_state['dataframes']:
         st.warning("No data available to process.")
         return
@@ -162,10 +170,10 @@ def data_storage_page():
     if st.button("Download Data"):
         download_historical_data(symbol_file_path, start_date, end_date)
 
-    # Remove headers from all data
+    # Standardize headers for all data
     if st.session_state['csv_files']:
         if st.button("Use Standard Column Names"):
-            remove_headers_from_all_data()
+            standardize_headers_for_all_data()
 
     # View stored data
     if st.button("View Stored Data"):
@@ -182,15 +190,7 @@ def data_storage_page():
                     if df.attrs.get('use_standard_headers', False):
                         # Display with standard column names
                         st.write("(Using standard column names)")
-                        # Create a copy with standard column names
-                        display_df = df.head(10).copy()
-                        # Ensure we have the right number of columns before renaming
-                        if len(display_df.columns) == 7:
-                            display_df.columns = ['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-                            st.dataframe(display_df, hide_index=True)
-                        else:
-                            # If column count doesn't match, just display with original columns
-                            st.dataframe(df.head(10), hide_index=True)
+                        st.dataframe(df.head(10), hide_index=True)
                     else:
                         # Display with original headers
                         st.dataframe(df.head(10), hide_index=True)
@@ -263,10 +263,23 @@ def backtest_page():
         st.error("Error loading dataframes. Please check your data.")
         return
     
+    # Debug information to help diagnose issues
+    st.write("### Debug Information")
+    st.write(f"Stock 1 columns: {df1.columns.tolist()}")
+    st.write(f"Stock 2 columns: {df2.columns.tolist()}")
+    
     # Extract Date and Close columns
     try:
         df1 = df1[['Date', 'Close']]
         df2 = df2[['Date', 'Close']]
+        
+        # Debug: Show the extracted columns
+        st.write("Successfully extracted Date and Close columns")
+        st.write("Stock 1 Date and Close sample:")
+        st.dataframe(df1.head(3), hide_index=True)
+        st.write("Stock 2 Date and Close sample:")
+        st.dataframe(df2.head(3), hide_index=True)
+        
     except KeyError as e:
         st.error(f"Error extracting columns: {e}. Ensure the CSV files have 'Date' and 'Close' columns.")
         return
@@ -274,6 +287,12 @@ def backtest_page():
     # Merge the data on Date
     try:
         comparison_df = pd.merge(df1, df2, on='Date', how='outer', suffixes=('_1', '_2'))
+        
+        # Debug: Show the merged dataframe
+        st.write("Successfully merged dataframes")
+        st.write("Merged dataframe sample:")
+        st.dataframe(comparison_df.head(3), hide_index=True)
+        
     except Exception as e:
         st.error(f"Error merging DataFrames: {e}")
         return
