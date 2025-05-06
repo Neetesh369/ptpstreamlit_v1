@@ -110,6 +110,14 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             # Rearrange columns
             data = data[['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
             
+            # Clean the data by removing the row with symbol in all columns if it exists
+            # This is a common issue with Yahoo Finance data
+            if len(data) > 1:
+                # Check if the second row has the symbol in multiple columns
+                second_row = data.iloc[1]
+                if (second_row == symbol).sum() > 1:  # If symbol appears in multiple columns
+                    data = pd.concat([data.iloc[[0]], data.iloc[2:]]).reset_index(drop=True)
+            
             # Save to Streamlit's persistent storage
             if save_dataframe(f"{symbol}.csv", data):
                 st.success(f"Data for {symbol} saved successfully")
@@ -120,14 +128,25 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             st.error(f"Error downloading data for {symbol}: {e}")
 
 def clean_uploaded_data(df):
-    """Clean the uploaded data by removing the second row if it exists."""
-    if len(df) > 1:  # Check if there are at least 2 rows
-        # Create a new dataframe without the second row
-        return pd.concat([df.iloc[[0]], df.iloc[2:]]).reset_index(drop=True)
+    """Clean the uploaded data by removing rows with duplicate symbol values."""
+    if len(df) > 1:
+        # Get the symbol from the first column of the first row
+        symbol = df.iloc[0, 0]
+        
+        # Check if any row has the symbol repeated across multiple columns
+        rows_to_keep = []
+        for i in range(len(df)):
+            row = df.iloc[i]
+            # If the symbol appears in multiple columns, skip this row
+            if (row == symbol).sum() <= 1:  # Allow symbol to appear in Symbol column only
+                rows_to_keep.append(i)
+        
+        # Keep only the rows that don't have symbol repeated
+        return df.iloc[rows_to_keep].reset_index(drop=True)
     return df
 
 def remove_second_row_from_all_data():
-    """Remove the second row from all stored dataframes."""
+    """Remove problematic rows from all stored dataframes."""
     if not st.session_state['csv_files']:
         st.warning("No data available to clean.")
         return
@@ -136,15 +155,26 @@ def remove_second_row_from_all_data():
     for file_name in st.session_state['csv_files']:
         df = load_dataframe(file_name)
         if df is not None and len(df) > 1:
-            # Remove the second row (index 1) while keeping the first row
-            cleaned_df = pd.concat([df.iloc[[0]], df.iloc[2:]]).reset_index(drop=True)
+            # Get the symbol from the filename (remove .csv extension)
+            symbol = file_name.replace('.csv', '')
+            
+            # Find rows where the symbol appears in multiple columns
+            rows_to_keep = []
+            for i in range(len(df)):
+                row = df.iloc[i]
+                # If the symbol appears in multiple columns, skip this row
+                if sum(row.astype(str).str.contains(symbol)) <= 1:  # Allow symbol to appear in Symbol column only
+                    rows_to_keep.append(i)
+            
+            # Keep only the rows that don't have symbol repeated
+            cleaned_df = df.iloc[rows_to_keep].reset_index(drop=True)
             
             # Save back to session state
             save_dataframe(file_name, cleaned_df)
             cleaned_count += 1
     
     if cleaned_count > 0:
-        st.success(f"Successfully removed the second row from {cleaned_count} files.")
+        st.success(f"Successfully cleaned {cleaned_count} files.")
     else:
         st.info("No files needed cleaning.")
 
