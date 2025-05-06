@@ -5,6 +5,10 @@ import yfinance as yf
 from datetime import datetime
 import os
 import pickle
+import matplotlib.pyplot as plt
+from statsmodels.tsa.stattools import adfuller
+from scipy import stats
+import statsmodels.api as sm
 
 # Create a directory for storing data if it doesn't exist
 DATA_DIR = "data_storage"
@@ -221,6 +225,37 @@ def clean_uploaded_data(df):
     
     return df
 
+# Function to test for cointegration
+def test_cointegration(series1, series2):
+    """
+    Test for cointegration between two price series using the Engle-Granger two-step method.
+    
+    Returns:
+    - result: Dictionary containing test results
+    """
+    # Step 1: Run OLS regression
+    X = sm.add_constant(series1)
+    model = sm.OLS(series2, X).fit()
+    
+    # Get the residuals (spread)
+    spread = model.resid
+    
+    # Step 2: Test for stationarity of residuals using ADF test
+    adf_result = adfuller(spread)
+    
+    # Prepare result dictionary
+    result = {
+        'ADF Statistic': adf_result[0],
+        'p-value': adf_result[1],
+        'Critical Values': adf_result[4],
+        'Is Cointegrated': adf_result[1] < 0.05,  # p-value < 0.05 indicates cointegration
+        'Regression Coefficient': model.params[1],
+        'Regression Intercept': model.params[0],
+        'Regression R-squared': model.rsquared
+    }
+    
+    return result, spread, model
+
 def data_storage_page():
     """Data Storage page to download and store stock data."""
     st.title("📂 Data Storage")
@@ -282,7 +317,200 @@ def data_storage_page():
                 st.success(f"File {file_to_delete} deleted successfully")
             else:
                 st.error(f"Error deleting file: {file_to_delete}")
+
+def correlation_cointegration_page():
+    """Page to test correlation and cointegration between stock pairs."""
+    st.title("Correlation & Cointegration Analysis")
+    
+    # Check if the CSV files and dataframes are available in session_state
+    if not st.session_state['csv_files']:
+        st.warning("Please download or upload data from the Data Storage page first.")
+        return
+    
+    # Add dropdowns to select two stocks
+    st.header("Select Stock Pair")
+    col1, col2 = st.columns(2)
+    with col1:
+        stock1 = st.selectbox("Select Stock 1", st.session_state['csv_files'], key="corr_stock1")
+    with col2:
+        stock2 = st.selectbox("Select Stock 2", st.session_state['csv_files'], key="corr_stock2")
+    
+    if stock1 == stock2:
+        st.error("Please select two different stocks.")
+        return
+    
+    # Retrieve the selected dataframes
+    df1 = load_dataframe(stock1)
+    df2 = load_dataframe(stock2)
+    
+    if df1 is None or df2 is None:
+        st.error("Error loading dataframes. Please check your data.")
+        return
+    
+    # Extract Date and Close columns
+    try:
+        df1_close = df1[['Date', 'Close']].copy()
+        df2_close = df2[['Date', 'Close']].copy()
         
+        # Convert Date column to datetime if it's not already
+        if not pd.api.types.is_datetime64_any_dtype(df1_close['Date']):
+            df1_close['Date'] = pd.to_datetime(df1_close['Date'])
+        if not pd.api.types.is_datetime64_any_dtype(df2_close['Date']):
+            df2_close['Date'] = pd.to_datetime(df2_close['Date'])
+        
+        # Merge the data on Date
+        comparison_df = pd.merge(df1_close, df2_close, on='Date', how='inner', suffixes=('_1', '_2'))
+        
+        # Rename columns for clarity
+        comparison_df.rename(columns={
+            'Close_1': stock1,
+            'Close_2': stock2
+        }, inplace=True)
+        
+        # Sort by Date (oldest first)
+        comparison_df = comparison_df.sort_values(by='Date', ascending=True)
+        
+    except KeyError as e:
+        st.error(f"Error extracting columns: {e}. Ensure the CSV files have 'Date' and 'Close' columns.")
+        return
+    except Exception as e:
+        st.error(f"Error processing data: {e}")
+        return
+    
+    # Add a "Run Analysis" button
+    if st.button("Run Analysis"):
+        # Check if we have enough data
+        if len(comparison_df) < 30:
+            st.warning("Not enough data points for reliable analysis. At least 30 data points are recommended.")
+            return
+        
+        # Display the comparison table (most recent 10 rows)
+        st.subheader("Price Data (Last 10 Rows)")
+        display_df = comparison_df.sort_values(by='Date', ascending=False).head(10)
+        st.dataframe(display_df, hide_index=True)
+        
+        # Calculate correlation
+        correlation = comparison_df[stock1].corr(comparison_df[stock2])
+        
+        # Create a scatter plot of prices
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.scatter(comparison_df[stock1], comparison_df[stock2], alpha=0.5)
+        ax.set_xlabel(stock1)
+        ax.set_ylabel(stock2)
+        ax.set_title(f'Price Scatter Plot: {stock1} vs {stock2}')
+        
+        # Add regression line
+        slope, intercept, r_value, p_value, std_err = stats.linregress(comparison_df[stock1], comparison_df[stock2])
+        x = np.array([comparison_df[stock1].min(), comparison_df[stock1].max()])
+        y = intercept + slope * x
+        ax.plot(x, y, 'r-', label=f'y = {slope:.2f}x + {intercept:.2f}')
+        ax.legend()
+        
+        st.pyplot(fig)
+        
+        # Display correlation results
+        st.subheader("Correlation Analysis")
+        st.write(f"**Pearson Correlation Coefficient:** {correlation:.4f}")
+        
+        # Interpret correlation
+        if abs(correlation) > 0.8:
+            correlation_strength = "Very Strong"
+        elif abs(correlation) > 0.6:
+            correlation_strength = "Strong"
+        elif abs(correlation) > 0.4:
+            correlation_strength = "Moderate"
+        elif abs(correlation) > 0.2:
+            correlation_strength = "Weak"
+        else:
+            correlation_strength = "Very Weak"
+        
+        correlation_direction = "Positive" if correlation > 0 else "Negative"
+        
+        st.write(f"**Interpretation:** {correlation_direction} {correlation_strength} correlation")
+        st.write(f"**R-squared:** {r_value**2:.4f} (Proportion of variance explained)")
+        
+        # Test for cointegration
+        st.subheader("Cointegration Analysis")
+        
+        # Run cointegration test
+        coint_result, spread, model = test_cointegration(comparison_df[stock1], comparison_df[stock2])
+        
+        # Display cointegration results
+        st.write(f"**ADF Test Statistic:** {coint_result['ADF Statistic']:.4f}")
+        st.write(f"**p-value:** {coint_result['p-value']:.4f}")
+        st.write(f"**Critical Values:**")
+        for key, value in coint_result['Critical Values'].items():
+            st.write(f"  - {key}: {value:.4f}")
+        
+        # Interpret cointegration
+        if coint_result['Is Cointegrated']:
+            st.success("**Result:** The pair is cointegrated (p-value < 0.05)")
+            st.write("This suggests the pair may be suitable for pairs trading as they tend to revert to a long-term equilibrium relationship.")
+        else:
+            st.warning("**Result:** The pair is not cointegrated (p-value >= 0.05)")
+            st.write("This suggests the pair may not be ideal for pairs trading as they don't show a stable long-term relationship.")
+        
+        # Display regression results
+        st.subheader("Regression Analysis")
+        st.write(f"**Regression Equation:** {stock2} = {coint_result['Regression Intercept']:.4f} + {coint_result['Regression Coefficient']:.4f} × {stock1}")
+        st.write(f"**R-squared:** {coint_result['Regression R-squared']:.4f}")
+        
+        # Plot the spread (residuals)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        spread_series = pd.Series(spread, index=comparison_df['Date'])
+        ax.plot(spread_series)
+        ax.axhline(y=0, color='r', linestyle='-')
+        ax.set_title('Spread (Residuals) Over Time')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Spread')
+        st.pyplot(fig)
+        
+        # Calculate and plot the price ratio
+        comparison_df['Ratio'] = comparison_df[stock1] / comparison_df[stock2]
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(comparison_df['Date'], comparison_df['Ratio'])
+        ax.set_title(f'Price Ratio Over Time: {stock1} / {stock2}')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Ratio')
+        st.pyplot(fig)
+        
+        # Calculate and plot normalized prices
+        comparison_df[f'{stock1}_norm'] = comparison_df[stock1] / comparison_df[stock1].iloc[0]
+        comparison_df[f'{stock2}_norm'] = comparison_df[stock2] / comparison_df[stock2].iloc[0]
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(comparison_df['Date'], comparison_df[f'{stock1}_norm'], label=stock1)
+        ax.plot(comparison_df['Date'], comparison_df[f'{stock2}_norm'], label=stock2)
+        ax.set_title('Normalized Prices Over Time')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Normalized Price')
+        ax.legend()
+        st.pyplot(fig)
+        
+        # Summary and recommendations
+        st.subheader("Summary and Recommendations")
+        
+        if coint_result['Is Cointegrated'] and abs(correlation) > 0.6:
+            st.success("This pair shows strong statistical evidence for a pairs trading strategy.")
+            st.write("- The stocks are highly correlated, indicating they move together")
+            st.write("- The pair is cointegrated, suggesting a stable long-term relationship")
+            st.write("- Consider using this pair for a pairs trading strategy with appropriate entry/exit signals")
+        elif coint_result['Is Cointegrated']:
+            st.info("This pair shows potential for pairs trading, but with caution.")
+            st.write("- The pair is cointegrated, suggesting a long-term relationship")
+            st.write(f"- However, the correlation is {correlation_strength.lower()}, which may indicate less predictable short-term movements")
+            st.write("- Consider additional analysis or tighter risk management if using this pair")
+        elif abs(correlation) > 0.6:
+            st.warning("This pair shows correlation but lacks cointegration.")
+            st.write("- The stocks show correlation in their price movements")
+            st.write("- However, the lack of cointegration suggests the relationship may not be stable over time")
+            st.write("- This pair may be better suited for other strategies than traditional pairs trading")
+        else:
+            st.error("This pair does not show strong statistical evidence for pairs trading.")
+            st.write("- The correlation is weak and the pair is not cointegrated")
+            st.write("- Consider looking for other pairs with stronger statistical relationships")
+
 def backtest_page():
     """Backtesting page to analyze stock data."""
     st.title("Backtesting Page")
@@ -711,10 +939,12 @@ def backtest_page():
 
 def main():
     st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", ["Data Storage", "Backtesting Page"])
+    page = st.sidebar.radio("Go to", ["Data Storage", "Correlation & Cointegration", "Backtesting Page"])
 
     if page == "Data Storage":
         data_storage_page()
+    elif page == "Correlation & Cointegration":
+        correlation_cointegration_page()
     elif page == "Backtesting Page":
         backtest_page()
 
