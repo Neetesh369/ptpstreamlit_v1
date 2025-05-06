@@ -43,10 +43,21 @@ if 'dataframes' not in st.session_state:
 if 'csv_files' not in st.session_state:
     st.session_state['csv_files'] = []
 
+# Function to standardize column names
+def standardize_columns(df):
+    """Standardize column names to Symbol, Date, Open, High, Low, Close, Volume."""
+    # Check if we have the expected number of columns
+    if len(df.columns) == 7:
+        df.columns = ['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+    return df
+
 # Function to save dataframe to Streamlit's persistent storage
 def save_dataframe(symbol, df):
-    """Save a dataframe to Streamlit's persistent storage."""
+    """Save a dataframe to Streamlit's persistent storage with standardized columns."""
     try:
+        # Standardize column names before saving
+        df = standardize_columns(df)
+        
         # Store in session state
         st.session_state['dataframes'][symbol] = df
         
@@ -63,15 +74,7 @@ def save_dataframe(symbol, df):
 def load_dataframe(symbol):
     """Load a dataframe from Streamlit's persistent storage."""
     if symbol in st.session_state['dataframes']:
-        df = st.session_state['dataframes'][symbol]
-        
-        # If the dataframe has standard headers flag, ensure column names are set correctly
-        if df.attrs.get('use_standard_headers', False) and len(df.columns) == 7:
-            # Create a copy to avoid modifying the original
-            df_copy = df.copy()
-            df_copy.columns = ['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-            return df_copy
-        return df
+        return st.session_state['dataframes'][symbol]
     else:
         return None
 
@@ -122,9 +125,9 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             if len(data) > 2:
                 data = data.iloc[2:].reset_index(drop=True)
             
-            # Save to Streamlit's persistent storage
+            # Save to Streamlit's persistent storage with standardized column names
             if save_dataframe(f"{symbol}.csv", data):
-                st.success(f"Data for {symbol} saved successfully")
+                st.success(f"Data for {symbol} saved successfully with standardized column names")
             else:
                 st.error(f"Failed to save data for {symbol}")
                 
@@ -132,27 +135,15 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             st.error(f"Error downloading data for {symbol}: {e}")
 
 def clean_uploaded_data(df):
-    """Clean the uploaded data by removing the first two rows if they exist."""
+    """Clean the uploaded data and standardize column names."""
+    # Remove first two rows if they exist
     if len(df) > 2:
-        return df.iloc[2:].reset_index(drop=True)
+        df = df.iloc[2:].reset_index(drop=True)
+    
+    # Standardize column names
+    df = standardize_columns(df)
+    
     return df
-
-def standardize_headers_for_all_data():
-    """Standardize header rows for all stored dataframes."""
-    if not st.session_state['dataframes']:
-        st.warning("No data available to process.")
-        return
-    
-    for file_name in st.session_state['csv_files']:
-        df = st.session_state['dataframes'][file_name]
-        
-        # Add a flag to indicate this dataframe should use standard column names
-        df.attrs['use_standard_headers'] = True
-        
-        # Update the dataframe in session state
-        st.session_state['dataframes'][file_name] = df
-    
-    st.success("Headers standardized for all data files.")
 
 def data_storage_page():
     """Data Storage page to download and store stock data."""
@@ -170,11 +161,6 @@ def data_storage_page():
     if st.button("Download Data"):
         download_historical_data(symbol_file_path, start_date, end_date)
 
-    # Standardize headers for all data
-    if st.session_state['csv_files']:
-        if st.button("Use Standard Column Names"):
-            standardize_headers_for_all_data()
-
     # View stored data
     if st.button("View Stored Data"):
         if not st.session_state['csv_files']:
@@ -187,13 +173,7 @@ def data_storage_page():
                     st.write(f"#### File: {file_name}")
                     
                     # Display the dataframe
-                    if df.attrs.get('use_standard_headers', False):
-                        # Display with standard column names
-                        st.write("(Using standard column names)")
-                        st.dataframe(df.head(10), hide_index=True)
-                    else:
-                        # Display with original headers
-                        st.dataframe(df.head(10), hide_index=True)
+                    st.dataframe(df.head(10), hide_index=True)
                 else:
                     st.error(f"Error loading {file_name}")
     
@@ -205,13 +185,13 @@ def data_storage_page():
             # Read the uploaded file
             df = pd.read_csv(uploaded_file)
         
-            # Clean the data
+            # Clean the data and standardize column names
             df = clean_uploaded_data(df)
         
             # Save to Streamlit's persistent storage
             file_name = uploaded_file.name
             if save_dataframe(file_name, df):
-                st.success(f"File {file_name} uploaded and cleaned successfully")
+                st.success(f"File {file_name} uploaded, cleaned, and standardized successfully")
             else:
                 st.error(f"Failed to upload {file_name}")
         except Exception as e:
@@ -263,23 +243,10 @@ def backtest_page():
         st.error("Error loading dataframes. Please check your data.")
         return
     
-    # Debug information to help diagnose issues
-    st.write("### Debug Information")
-    st.write(f"Stock 1 columns: {df1.columns.tolist()}")
-    st.write(f"Stock 2 columns: {df2.columns.tolist()}")
-    
     # Extract Date and Close columns
     try:
         df1 = df1[['Date', 'Close']]
         df2 = df2[['Date', 'Close']]
-        
-        # Debug: Show the extracted columns
-        st.write("Successfully extracted Date and Close columns")
-        st.write("Stock 1 Date and Close sample:")
-        st.dataframe(df1.head(3), hide_index=True)
-        st.write("Stock 2 Date and Close sample:")
-        st.dataframe(df2.head(3), hide_index=True)
-        
     except KeyError as e:
         st.error(f"Error extracting columns: {e}. Ensure the CSV files have 'Date' and 'Close' columns.")
         return
@@ -287,12 +254,6 @@ def backtest_page():
     # Merge the data on Date
     try:
         comparison_df = pd.merge(df1, df2, on='Date', how='outer', suffixes=('_1', '_2'))
-        
-        # Debug: Show the merged dataframe
-        st.write("Successfully merged dataframes")
-        st.write("Merged dataframe sample:")
-        st.dataframe(comparison_df.head(3), hide_index=True)
-        
     except Exception as e:
         st.error(f"Error merging DataFrames: {e}")
         return
