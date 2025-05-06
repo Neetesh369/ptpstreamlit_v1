@@ -43,21 +43,10 @@ if 'dataframes' not in st.session_state:
 if 'csv_files' not in st.session_state:
     st.session_state['csv_files'] = []
 
-# Function to standardize column names
-def standardize_columns(df):
-    """Standardize column names to Symbol, Date, Open, High, Low, Close, Volume."""
-    # Check if we have the expected number of columns
-    if len(df.columns) == 7:
-        df.columns = ['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-    return df
-
 # Function to save dataframe to Streamlit's persistent storage
 def save_dataframe(symbol, df):
-    """Save a dataframe to Streamlit's persistent storage with standardized columns."""
+    """Save a dataframe to Streamlit's persistent storage."""
     try:
-        # Standardize column names before saving
-        df = standardize_columns(df)
-        
         # Store in session state
         st.session_state['dataframes'][symbol] = df
         
@@ -125,9 +114,9 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             if len(data) > 2:
                 data = data.iloc[2:].reset_index(drop=True)
             
-            # Save to Streamlit's persistent storage with standardized column names
+            # Save to Streamlit's persistent storage
             if save_dataframe(f"{symbol}.csv", data):
-                st.success(f"Data for {symbol} saved successfully with standardized column names")
+                st.success(f"Data for {symbol} saved successfully")
             else:
                 st.error(f"Failed to save data for {symbol}")
                 
@@ -135,14 +124,9 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             st.error(f"Error downloading data for {symbol}: {e}")
 
 def clean_uploaded_data(df):
-    """Clean the uploaded data and standardize column names."""
-    # Remove first two rows if they exist
+    """Clean the uploaded data by removing the first two rows if they exist."""
     if len(df) > 2:
-        df = df.iloc[2:].reset_index(drop=True)
-    
-    # Standardize column names
-    df = standardize_columns(df)
-    
+        return df.iloc[2:].reset_index(drop=True)
     return df
 
 def data_storage_page():
@@ -171,9 +155,7 @@ def data_storage_page():
                 df = load_dataframe(file_name)
                 if df is not None:
                     st.write(f"#### File: {file_name}")
-                    
-                    # Display the dataframe
-                    st.dataframe(df.head(10), hide_index=True)
+                    st.dataframe(df.head(10))  # Display the first 10 rows
                 else:
                     st.error(f"Error loading {file_name}")
     
@@ -185,13 +167,13 @@ def data_storage_page():
             # Read the uploaded file
             df = pd.read_csv(uploaded_file)
         
-            # Clean the data and standardize column names
+            # Clean the data
             df = clean_uploaded_data(df)
         
             # Save to Streamlit's persistent storage
             file_name = uploaded_file.name
             if save_dataframe(file_name, df):
-                st.success(f"File {file_name} uploaded, cleaned, and standardized successfully")
+                st.success(f"File {file_name} uploaded and cleaned successfully")
             else:
                 st.error(f"Failed to upload {file_name}")
         except Exception as e:
@@ -357,7 +339,7 @@ def backtest_page():
         # Display the comparison table (most recent 300 rows)
         st.header("Stock Price Comparison (Last 300 Rows)")
         display_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
-        st.dataframe(display_df, hide_index=True)
+        st.dataframe(display_df)
         
         # Calculate trade results
         trades = []
@@ -562,7 +544,7 @@ def backtest_page():
         if trades:
             trades_df = pd.DataFrame(trades)
             st.header("Trade Results")
-            st.dataframe(trades_df, hide_index=True)
+            st.dataframe(trades_df)
             
             # Create a debug dataframe
             debug_df = pd.DataFrame(debug_info)
@@ -570,7 +552,7 @@ def backtest_page():
             # Show debug information (only rows with actions)
             st.header("Trade Actions Log")
             action_debug_df = debug_df[debug_df['Action'] != 'None']
-            st.dataframe(action_debug_df, hide_index=True)
+            st.dataframe(action_debug_df)
             
             # Calculate trade summary metrics
             total_trades = len(trades_df)
@@ -620,7 +602,7 @@ def backtest_page():
                 ]
             }
             summary_df = pd.DataFrame(summary_data)
-            st.dataframe(summary_df, hide_index=True)
+            st.dataframe(summary_df)
             
             # Display exit reason statistics
             st.subheader("Exit Reasons")
@@ -628,7 +610,7 @@ def backtest_page():
                 'Exit Reason': exit_reasons.index,
                 'Count': exit_reasons.values
             })
-            st.dataframe(exit_reasons_df, hide_index=True)
+            st.dataframe(exit_reasons_df)
             
             # Display total profit
             st.success(f"Total Profit: {total_profit:.2f}")
