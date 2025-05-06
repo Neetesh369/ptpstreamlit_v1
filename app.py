@@ -119,29 +119,18 @@ def download_historical_data(symbol_file_path, start_date, end_date):
         except Exception as e:
             st.error(f"Error downloading data for {symbol}: {e}")
 
-def clean_dataframe(df, symbol_name):
+def force_remove_second_row(df):
     """
-    Clean the dataframe by removing rows where most columns contain the symbol name.
-    This specifically targets the Yahoo Finance format issue.
+    Forcibly remove the second row (index 1) from the dataframe.
+    This is a direct approach when other methods fail.
     """
-    # Extract symbol name without .csv extension if present
-    if symbol_name.endswith('.csv'):
-        symbol_name = symbol_name[:-4]
-    
-    # Convert all values to strings for comparison
-    df_str = df.astype(str)
-    
-    # For each row, count how many columns contain the symbol name
-    symbol_counts = df_str.apply(lambda row: sum(row.str.contains(symbol_name, regex=False)), axis=1)
-    
-    # Keep rows where the symbol doesn't appear in most columns (allowing it to appear in the Symbol column)
-    # Typically, if symbol appears in more than 2 columns, it's likely the problematic row
-    clean_df = df[symbol_counts <= 1].reset_index(drop=True)
-    
-    return clean_df
+    if len(df) > 1:
+        # Create a new dataframe without the second row
+        return pd.concat([df.iloc[[0]], df.iloc[2:]]).reset_index(drop=True)
+    return df
 
 def remove_second_row_from_all_data():
-    """Clean all stored dataframes by removing rows with repeated symbols."""
+    """Forcibly remove the second row from all stored dataframes."""
     if not st.session_state['csv_files']:
         st.warning("No data available to clean.")
         return
@@ -149,22 +138,24 @@ def remove_second_row_from_all_data():
     cleaned_count = 0
     for file_name in st.session_state['csv_files']:
         df = load_dataframe(file_name)
-        if df is not None:
-            # Get symbol name from file name
-            symbol_name = file_name
-            if symbol_name.endswith('.csv'):
-                symbol_name = symbol_name[:-4]
+        if df is not None and len(df) > 1:
+            # Display the first few rows before cleaning
+            st.write(f"**Before cleaning {file_name}:**")
+            st.dataframe(df.head(3))
             
-            # Clean the dataframe
-            cleaned_df = clean_dataframe(df, symbol_name)
+            # Forcibly remove the second row
+            cleaned_df = force_remove_second_row(df)
             
-            # If rows were removed, save the cleaned dataframe
-            if len(cleaned_df) < len(df):
-                save_dataframe(file_name, cleaned_df)
-                cleaned_count += 1
+            # Display the first few rows after cleaning
+            st.write(f"**After cleaning {file_name}:**")
+            st.dataframe(cleaned_df.head(3))
+            
+            # Save back to session state
+            save_dataframe(file_name, cleaned_df)
+            cleaned_count += 1
     
     if cleaned_count > 0:
-        st.success(f"Successfully cleaned {cleaned_count} files.")
+        st.success(f"Successfully cleaned {cleaned_count} files by removing the second row.")
     else:
         st.info("No files needed cleaning.")
 
@@ -210,16 +201,11 @@ def data_storage_page():
             # Read the uploaded file
             df = pd.read_csv(uploaded_file)
             
-            # Get the symbol name from the file name
-            file_name = uploaded_file.name
-            symbol_name = file_name
-            if symbol_name.endswith('.csv'):
-                symbol_name = symbol_name[:-4]
-            
-            # Clean the dataframe
-            df = clean_dataframe(df, symbol_name)
+            # Clean the data by forcibly removing the second row
+            df = force_remove_second_row(df)
         
             # Save to Streamlit's persistent storage
+            file_name = uploaded_file.name
             if save_dataframe(file_name, df):
                 st.success(f"File {file_name} uploaded and cleaned successfully")
             else:
