@@ -97,7 +97,7 @@ def download_historical_data(symbol_file_path, start_date, end_date):
         try:
             st.write(f"Downloading data for {symbol}...")
             # Use header=0 to ensure only the first row is treated as header
-            data = yf.download(symbol, start=start_date, end=end_date, header=0)
+            data = yf.download(symbol, start=start_date, end=end_date)
 
             # If no data is retrieved, skip saving
             if data.empty:
@@ -110,6 +110,9 @@ def download_historical_data(symbol_file_path, start_date, end_date):
 
             # Rearrange columns
             data = data[['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
+            
+            # Clean the data to remove any problematic rows
+            data = clean_header_row(data, symbol)
             
             # Save to Streamlit's persistent storage
             if save_dataframe(f"{symbol}.csv", data):
