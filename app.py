@@ -516,12 +516,12 @@ def backtest_page():
                     st.success("**Result:** Cointegrated (p < 0.05)")
                 else:
                     st.warning("**Result:** Not cointegrated (p >= 0.05)")
-        
-        # Add a visual separator
-        st.markdown("---")
-        
-    except Exception as e:
-        st.error(f"Error in correlation/cointegration analysis: {e}")
+            
+            # Add a visual separator
+            st.markdown("---")
+            
+        except Exception as e:
+            st.error(f"Error in correlation/cointegration analysis: {e}")
         
         # Calculate trade results
         trades = []
@@ -536,7 +536,7 @@ def backtest_page():
         
         # Debug information
         debug_info = []
-        
+
         for index, row in comparison_df.iterrows():
             current_date = row['Date']
             current_zscore = row['Z-Score']
