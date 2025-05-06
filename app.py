@@ -3,6 +3,13 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from datetime import datetime
+import os
+import pickle
+
+# Create a directory for storing data if it doesn't exist
+DATA_DIR = "data_storage"
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
 
 # Inject custom CSS to use Inter font
 st.markdown(
@@ -36,17 +43,55 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Initialize session state for storing data
-if 'dataframes' not in st.session_state:
-    st.session_state['dataframes'] = {}
+# Load existing data files into session state at startup
+def load_all_data_files():
+    """Load all saved data files into session state."""
+    if 'dataframes' not in st.session_state:
+        st.session_state['dataframes'] = {}
+    
+    if 'csv_files' not in st.session_state:
+        st.session_state['csv_files'] = []
+    
+    # Check if data directory exists
+    if not os.path.exists(DATA_DIR):
+        return
+    
+    # Load all pickle files from the data directory
+    for filename in os.listdir(DATA_DIR):
+        if filename.endswith('.pkl'):
+            file_path = os.path.join(DATA_DIR, filename)
+            try:
+                with open(file_path, 'rb') as f:
+                    df = pickle.load(f)
+                
+                # Store in session state
+                symbol = filename[:-4]  # Remove .pkl extension
+                st.session_state['dataframes'][symbol] = df
+                
+                # Add to list of available files if not already there
+                if symbol not in st.session_state['csv_files']:
+                    st.session_state['csv_files'].append(symbol)
+            except Exception as e:
+                st.error(f"Error loading {filename}: {e}")
 
-if 'csv_files' not in st.session_state:
-    st.session_state['csv_files'] = []
+# Call this function at startup
+load_all_data_files()
 
-# Function to save dataframe to Streamlit's persistent storage
+# Function to standardize column names
+def standardize_columns(df):
+    """Standardize column names to Symbol, Date, Open, High, Low, Close, Volume."""
+    # Check if we have the expected number of columns
+    if len(df.columns) == 7:
+        df.columns = ['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+    return df
+
+# Function to save dataframe to persistent storage
 def save_dataframe(symbol, df):
-    """Save a dataframe to Streamlit's persistent storage."""
+    """Save a dataframe to persistent storage with standardized columns."""
     try:
+        # Standardize column names before saving
+        df = standardize_columns(df)
+        
         # Store in session state
         st.session_state['dataframes'][symbol] = df
         
@@ -54,18 +99,60 @@ def save_dataframe(symbol, df):
         if symbol not in st.session_state['csv_files']:
             st.session_state['csv_files'].append(symbol)
         
+        # Save to pickle file for persistence across refreshes
+        file_path = os.path.join(DATA_DIR, f"{symbol}.pkl")
+        with open(file_path, 'wb') as f:
+            pickle.dump(df, f)
+        
         return True
     except Exception as e:
         st.error(f"Error saving dataframe: {e}")
         return False
 
-# Function to load dataframe from Streamlit's persistent storage
+# Function to load dataframe from persistent storage
 def load_dataframe(symbol):
-    """Load a dataframe from Streamlit's persistent storage."""
+    """Load a dataframe from persistent storage."""
+    # First try to get from session state
     if symbol in st.session_state['dataframes']:
         return st.session_state['dataframes'][symbol]
-    else:
-        return None
+    
+    # If not in session state, try to load from file
+    file_path = os.path.join(DATA_DIR, f"{symbol}.pkl")
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, 'rb') as f:
+                df = pickle.load(f)
+            
+            # Store in session state for future use
+            st.session_state['dataframes'][symbol] = df
+            
+            return df
+        except Exception as e:
+            st.error(f"Error loading {symbol}: {e}")
+    
+    return None
+
+# Function to delete dataframe from persistent storage
+def delete_dataframe(symbol):
+    """Delete a dataframe from persistent storage."""
+    try:
+        # Remove from session state
+        if symbol in st.session_state['dataframes']:
+            del st.session_state['dataframes'][symbol]
+        
+        # Remove from list of files
+        if symbol in st.session_state['csv_files']:
+            st.session_state['csv_files'].remove(symbol)
+        
+        # Delete the file
+        file_path = os.path.join(DATA_DIR, f"{symbol}.pkl")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        return True
+    except Exception as e:
+        st.error(f"Error deleting {symbol}: {e}")
+        return False
 
 def calculate_zscore(series, window=50):
     """Calculate the Z-score for a given series using a rolling window."""
@@ -84,7 +171,7 @@ def calculate_rsi(series, window=14):
     return rsi
 
 def download_historical_data(symbol_file_path, start_date, end_date):
-    """Download historical data from Yahoo Finance, clean it, and store in Streamlit's persistent storage."""
+    """Download historical data from Yahoo Finance, clean it, and store in persistent storage."""
     try:
         # Read the symbol file
         symbols = pd.read_csv(symbol_file_path, header=None).iloc[:, 0].tolist()
@@ -114,9 +201,9 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             if len(data) > 2:
                 data = data.iloc[2:].reset_index(drop=True)
             
-            # Save to Streamlit's persistent storage
+            # Save to persistent storage with standardized column names
             if save_dataframe(f"{symbol}.csv", data):
-                st.success(f"Data for {symbol} saved successfully")
+                st.success(f"Data for {symbol} saved successfully with standardized column names")
             else:
                 st.error(f"Failed to save data for {symbol}")
                 
@@ -124,9 +211,14 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             st.error(f"Error downloading data for {symbol}: {e}")
 
 def clean_uploaded_data(df):
-    """Clean the uploaded data by removing the first two rows if they exist."""
+    """Clean the uploaded data and standardize column names."""
+    # Remove first two rows if they exist
     if len(df) > 2:
-        return df.iloc[2:].reset_index(drop=True)
+        df = df.iloc[2:].reset_index(drop=True)
+    
+    # Standardize column names
+    df = standardize_columns(df)
+    
     return df
 
 def data_storage_page():
@@ -155,7 +247,9 @@ def data_storage_page():
                 df = load_dataframe(file_name)
                 if df is not None:
                     st.write(f"#### File: {file_name}")
-                    st.dataframe(df.head(10))  # Display the first 10 rows
+                    
+                    # Display the dataframe
+                    st.dataframe(df.head(10), hide_index=True)
                 else:
                     st.error(f"Error loading {file_name}")
     
@@ -167,13 +261,13 @@ def data_storage_page():
             # Read the uploaded file
             df = pd.read_csv(uploaded_file)
         
-            # Clean the data
+            # Clean the data and standardize column names
             df = clean_uploaded_data(df)
         
-            # Save to Streamlit's persistent storage
+            # Save to persistent storage
             file_name = uploaded_file.name
             if save_dataframe(file_name, df):
-                st.success(f"File {file_name} uploaded and cleaned successfully")
+                st.success(f"File {file_name} uploaded, cleaned, and standardized successfully")
             else:
                 st.error(f"Failed to upload {file_name}")
         except Exception as e:
@@ -184,17 +278,10 @@ def data_storage_page():
         st.write("### Delete Stored Files")
         file_to_delete = st.selectbox("Select file to delete", st.session_state['csv_files'])
         if st.button("Delete Selected File"):
-            try:
-                # Remove from session state
-                if file_to_delete in st.session_state['dataframes']:
-                    del st.session_state['dataframes'][file_to_delete]
-                
-                # Remove from list of files
-                st.session_state['csv_files'].remove(file_to_delete)
-                
+            if delete_dataframe(file_to_delete):
                 st.success(f"File {file_to_delete} deleted successfully")
-            except Exception as e:
-                st.error(f"Error deleting file: {e}")
+            else:
+                st.error(f"Error deleting file: {file_to_delete}")
         
 def backtest_page():
     """Backtesting page to analyze stock data."""
@@ -339,7 +426,7 @@ def backtest_page():
         # Display the comparison table (most recent 300 rows)
         st.header("Stock Price Comparison (Last 300 Rows)")
         display_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
-        st.dataframe(display_df)
+        st.dataframe(display_df, hide_index=True)
         
         # Calculate trade results
         trades = []
@@ -544,7 +631,7 @@ def backtest_page():
         if trades:
             trades_df = pd.DataFrame(trades)
             st.header("Trade Results")
-            st.dataframe(trades_df)
+            st.dataframe(trades_df, hide_index=True)
             
             # Create a debug dataframe
             debug_df = pd.DataFrame(debug_info)
@@ -552,7 +639,7 @@ def backtest_page():
             # Show debug information (only rows with actions)
             st.header("Trade Actions Log")
             action_debug_df = debug_df[debug_df['Action'] != 'None']
-            st.dataframe(action_debug_df)
+            st.dataframe(action_debug_df, hide_index=True)
             
             # Calculate trade summary metrics
             total_trades = len(trades_df)
@@ -602,7 +689,7 @@ def backtest_page():
                 ]
             }
             summary_df = pd.DataFrame(summary_data)
-            st.dataframe(summary_df)
+            st.dataframe(summary_df, hide_index=True)
             
             # Display exit reason statistics
             st.subheader("Exit Reasons")
@@ -610,7 +697,7 @@ def backtest_page():
                 'Exit Reason': exit_reasons.index,
                 'Count': exit_reasons.values
             })
-            st.dataframe(exit_reasons_df)
+            st.dataframe(exit_reasons_df, hide_index=True)
             
             # Display total profit
             st.success(f"Total Profit: {total_profit:.2f}")
