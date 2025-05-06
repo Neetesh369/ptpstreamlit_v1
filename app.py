@@ -187,13 +187,13 @@ def data_storage_page():
                         # Ensure we have the right number of columns before renaming
                         if len(display_df.columns) == 7:
                             display_df.columns = ['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-                            st.dataframe(display_df)
+                            st.dataframe(display_df, hide_index=True)
                         else:
                             # If column count doesn't match, just display with original columns
-                            st.dataframe(df.head(10))
+                            st.dataframe(df.head(10), hide_index=True)
                     else:
                         # Display with original headers
-                        st.dataframe(df.head(10))
+                        st.dataframe(df.head(10), hide_index=True)
                 else:
                     st.error(f"Error loading {file_name}")
     
@@ -377,7 +377,7 @@ def backtest_page():
         # Display the comparison table (most recent 300 rows)
         st.header("Stock Price Comparison (Last 300 Rows)")
         display_df = comparison_df.sort_values(by='Date', ascending=False).head(300)
-        st.dataframe(display_df)
+        st.dataframe(display_df, hide_index=True)
         
         # Calculate trade results
         trades = []
@@ -582,7 +582,7 @@ def backtest_page():
         if trades:
             trades_df = pd.DataFrame(trades)
             st.header("Trade Results")
-            st.dataframe(trades_df)
+            st.dataframe(trades_df, hide_index=True)
             
             # Create a debug dataframe
             debug_df = pd.DataFrame(debug_info)
@@ -590,7 +590,7 @@ def backtest_page():
             # Show debug information (only rows with actions)
             st.header("Trade Actions Log")
             action_debug_df = debug_df[debug_df['Action'] != 'None']
-            st.dataframe(action_debug_df)
+            st.dataframe(action_debug_df, hide_index=True)
             
             # Calculate trade summary metrics
             total_trades = len(trades_df)
@@ -640,7 +640,7 @@ def backtest_page():
                 ]
             }
             summary_df = pd.DataFrame(summary_data)
-            st.dataframe(summary_df)
+            st.dataframe(summary_df, hide_index=True)
             
             # Display exit reason statistics
             st.subheader("Exit Reasons")
@@ -648,7 +648,7 @@ def backtest_page():
                 'Exit Reason': exit_reasons.index,
                 'Count': exit_reasons.values
             })
-            st.dataframe(exit_reasons_df)
+            st.dataframe(exit_reasons_df, hide_index=True)
             
             # Display total profit
             st.success(f"Total Profit: {total_profit:.2f}")
