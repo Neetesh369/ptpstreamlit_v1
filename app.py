@@ -110,10 +110,6 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             # Rearrange columns
             data = data[['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
             
-            # Clean the data (remove only the second row if it exists)
-            if len(data) > 1:
-                data = data.drop(index=1).reset_index(drop=True)
-            
             # Save to Streamlit's persistent storage
             if save_dataframe(f"{symbol}.csv", data):
                 st.success(f"Data for {symbol} saved successfully")
@@ -124,9 +120,10 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             st.error(f"Error downloading data for {symbol}: {e}")
 
 def clean_uploaded_data(df):
-    """Clean the uploaded data by removing only the second row if it exists."""
-    if len(df) > 1:
-        return df.drop(index=1).reset_index(drop=True)
+    """Clean the uploaded data by removing the second row if it exists."""
+    if len(df) > 1:  # Check if there are at least 2 rows
+        # Create a new dataframe without the second row
+        return pd.concat([df.iloc[[0]], df.iloc[2:]]).reset_index(drop=True)
     return df
 
 def remove_second_row_from_all_data():
@@ -139,11 +136,11 @@ def remove_second_row_from_all_data():
     for file_name in st.session_state['csv_files']:
         df = load_dataframe(file_name)
         if df is not None and len(df) > 1:
-            # Remove the second row (index 1)
-            df = df.drop(index=1).reset_index(drop=True)
+            # Remove the second row (index 1) while keeping the first row
+            cleaned_df = pd.concat([df.iloc[[0]], df.iloc[2:]]).reset_index(drop=True)
             
             # Save back to session state
-            save_dataframe(file_name, df)
+            save_dataframe(file_name, cleaned_df)
             cleaned_count += 1
     
     if cleaned_count > 0:
