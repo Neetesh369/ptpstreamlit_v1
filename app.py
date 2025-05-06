@@ -4,13 +4,9 @@ import pandas as pd
 import io
 import numpy as np
 import yfinance as yf
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 import uuid
 from datetime import datetime
+import json
 
 # Inject custom CSS to use Inter font
 st.markdown(
@@ -43,6 +39,40 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+# Initialize session state for storing data
+if 'dataframes' not in st.session_state:
+    st.session_state['dataframes'] = {}
+
+if 'csv_files' not in st.session_state:
+    st.session_state['csv_files'] = []
+
+# Function to save dataframe to Streamlit's persistent storage
+def save_dataframe(symbol, df):
+    """Save a dataframe to Streamlit's persistent storage."""
+    try:
+        # Convert dataframe to CSV string
+        csv_string = df.to_csv(index=False)
+        
+        # Store in session state
+        st.session_state['dataframes'][symbol] = df
+        
+        # Add to list of available files if not already there
+        if symbol not in st.session_state['csv_files']:
+            st.session_state['csv_files'].append(symbol)
+        
+        return True
+    except Exception as e:
+        st.error(f"Error saving dataframe: {e}")
+        return False
+
+# Function to load dataframe from Streamlit's persistent storage
+def load_dataframe(symbol):
+    """Load a dataframe from Streamlit's persistent storage."""
+    if symbol in st.session_state['dataframes']:
+        return st.session_state['dataframes'][symbol]
+    else:
+        return None
 
 # If modifying these SCOPES, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']
@@ -183,18 +213,14 @@ def list_google_drive_folders(creds):
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
-def download_historical_data(symbol_file_path, output_folder_path, start_date, end_date):
-    """Download historical data from Yahoo Finance without cleaning."""
+def download_historical_data(symbol_file_path, start_date, end_date):
+    """Download historical data from Yahoo Finance, clean it, and store in Streamlit's persistent storage."""
     try:
         # Read the symbol file
         symbols = pd.read_csv(symbol_file_path, header=None).iloc[:, 0].tolist()
     except Exception as e:
         st.error(f"Error reading symbol file: {e}")
         return
-
-    # Ensure the output folder exists
-    if not os.path.exists(output_folder_path):
-        os.makedirs(output_folder_path)
 
     # Download data for each symbol
     for symbol in symbols:
@@ -213,11 +239,17 @@ def download_historical_data(symbol_file_path, output_folder_path, start_date, e
 
             # Rearrange columns
             data = data[['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
-
-            # Save to CSV (as-is, without cleaning)
-            output_file = os.path.join(output_folder_path, f"{symbol}.csv")
-            data.to_csv(output_file, index=False)
-            st.success(f"Data for {symbol} saved to {output_file}")
+            
+            # Clean the data (remove first two rows if they exist)
+            if len(data) > 2:
+                data = data.iloc[2:].reset_index(drop=True)
+            
+            # Save to Streamlit's persistent storage
+            if save_dataframe(f"{symbol}.csv", data):
+                st.success(f"Data for {symbol} saved successfully")
+            else:
+                st.error(f"Failed to save data for {symbol}")
+                
         except Exception as e:
             st.error(f"Error downloading data for {symbol}: {e}")
 
@@ -288,7 +320,13 @@ def upload_file_to_drive(creds, file_path, file_name, folder_id=None):
     except Exception as e:
         st.error(f"An error occurred while uploading the file: {e}")
 
-def data_storage_page(creds):
+def clean_uploaded_data(df):
+    """Clean the uploaded data by removing the first two rows if they exist."""
+    if len(df) > 2:
+        return df.iloc[2:].reset_index(drop=True)
+    return df
+
+def data_storage_page():
     """Data Storage page to download and store stock data."""
     st.title("📂 Data Storage")
 
@@ -300,62 +338,89 @@ def data_storage_page(creds):
     # Path to the symbol file
     symbol_file_path = "fosymbols.csv"  # Replace with the path to your symbol file
 
-    # Output folder path
-    output_folder_path = "downloaded_data"
-    if not os.path.exists(output_folder_path):
-        os.makedirs(output_folder_path)
-
-    # Download data (as-is)
+    # Download data
     if st.button("Download Data"):
-        download_historical_data(symbol_file_path, output_folder_path, start_date, end_date)
+        download_historical_data(symbol_file_path, start_date, end_date)
 
-    # View downloaded data (raw)
-    if st.button("View Downloaded Data"):
-        if not os.path.exists(output_folder_path):
+    # View stored data
+    if st.button("View Stored Data"):
+        if not st.session_state['csv_files']:
             st.warning("No data has been downloaded yet.")
         else:
-            st.write("### Downloaded Data (Raw)")
-            for file_name in os.listdir(output_folder_path):
-                file_path = os.path.join(output_folder_path, file_name)
-                try:
-                    df = pd.read_csv(file_path)
+            st.write("### Stored Data")
+            for file_name in st.session_state['csv_files']:
+                df = load_dataframe(file_name)
+                if df is not None:
                     st.write(f"#### File: {file_name}")
-                    st.dataframe(df)  # Display the raw data in a table
-                except Exception as e:
-                    st.error(f"Error reading {file_name}: {e}")
-
-    # Clean and upload files
-    if st.button("Clean and Upload"):
-        clean_and_upload_files(creds, output_folder_path)
+                    st.dataframe(df.head(10))  # Display the first 10 rows
+                else:
+                    st.error(f"Error loading {file_name}")
+    
+    # Upload CSV files directly
+    st.write("### Upload CSV Files")
+    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+    if uploaded_file is not None:
+        try:
+            # Read the uploaded file
+            df = pd.read_csv(uploaded_file)
+        
+            # Clean the data
+            df = clean_uploaded_data(df)
+        
+            # Save to Streamlit's persistent storage
+            file_name = uploaded_file.name
+            if save_dataframe(file_name, df):
+                st.success(f"File {file_name} uploaded and cleaned successfully")
+            else:
+                st.error(f"Failed to upload {file_name}")
+        except Exception as e:
+            st.error(f"Error processing uploaded file: {e}")
+    
+    # Delete stored files
+    if st.session_state['csv_files']:
+        st.write("### Delete Stored Files")
+        file_to_delete = st.selectbox("Select file to delete", st.session_state['csv_files'])
+        if st.button("Delete Selected File"):
+            try:
+                # Remove from session state
+                if file_to_delete in st.session_state['dataframes']:
+                    del st.session_state['dataframes'][file_to_delete]
+                
+                # Remove from list of files
+                st.session_state['csv_files'].remove(file_to_delete)
+                
+                st.success(f"File {file_to_delete} deleted successfully")
+            except Exception as e:
+                st.error(f"Error deleting file: {e}")
         
 def backtest_page():
     """Backtesting page to analyze stock data."""
     st.title("Backtesting Page")
     
     # Check if the CSV files and dataframes are available in session_state
-    if 'csv_files' not in st.session_state or 'dataframes' not in st.session_state:
-        st.warning("Please load data from the Google Drive Viewer first.")
+    if not st.session_state['csv_files']:
+        st.warning("Please download or upload data from the Data Storage page first.")
         return
-    
-    # Retrieve the list of CSV files and dataframes from session_state
-    csv_files = st.session_state['csv_files']
-    dataframes = st.session_state['dataframes']
     
     # Add dropdowns to select two stocks
     st.header("Select Stocks")
     col1, col2 = st.columns(2)
     with col1:
-        stock1 = st.selectbox("Select Stock 1", csv_files, key="stock1")
+        stock1 = st.selectbox("Select Stock 1", st.session_state['csv_files'], key="stock1")
     with col2:
-        stock2 = st.selectbox("Select Stock 2", csv_files, key="stock2")
+        stock2 = st.selectbox("Select Stock 2", st.session_state['csv_files'], key="stock2")
     
     if stock1 == stock2:
         st.error("Please select two different stocks.")
         return
     
     # Retrieve the selected dataframes
-    df1 = dataframes[stock1]
-    df2 = dataframes[stock2]
+    df1 = load_dataframe(stock1)
+    df2 = load_dataframe(stock2)
+    
+    if df1 is None or df2 is None:
+        st.error("Error loading dataframes. Please check your data.")
+        return
     
     # Extract Date and Close columns
     try:
@@ -431,12 +496,12 @@ def backtest_page():
         
         # Only show RSI parameters if RSI is enabled
         if use_rsi_for_entry:
-            short_entry_rsi = st.slider("Short Entry RSI", 0, 100, 70, key="short_entry_rsi")
+            short_entry_rsi = st.slider("Long Entry RSI", 0, 100, 70, key="short_entry_rsi")
         else:
             short_entry_rsi = 100  # Default value, won't be used
             
         if use_rsi_for_exit:
-            short_exit_rsi = st.slider("Short Exit RSI", 0, 100, 30, key="short_exit_rsi")
+            short_exit_rsi = st.slider("Long Exit RSI", 0, 100, 30, key="short_exit_rsi")
         else:
             short_exit_rsi = 0  # Default value, won't be used
     
@@ -559,7 +624,7 @@ def backtest_page():
                 current_profit_pct = ((short_entry_price - current_ratio) / short_entry_price) * 100
                 
                 # Check all exit conditions
-                zscore_exit = current_zscore <= short_exit_zscore  # FIXED: For short trades, exit when Z-Score falls below exit threshold
+                zscore_exit = current_zscore <= short_exit_zscore  # For short trades, exit when Z-Score falls below exit threshold
                 rsi_exit = use_rsi_for_exit and current_rsi <= short_exit_rsi
                 time_exit = days_in_trade >= max_days_in_trade
                 target_exit = current_profit_pct >= target_profit_pct
@@ -753,38 +818,15 @@ def backtest_page():
             st.line_chart(trades_df.set_index('Exit Date')['Cumulative Profit'])
         else:
             st.warning("No trades executed based on the provided parameters.")
-            
-def logout():
-    """Clear the session state and log out the user."""
-    session_id = st.query_params.get('session_id', None)
-    if session_id and session_id in st.session_state['tokens']:
-        del st.session_state['tokens'][session_id]
-    st.success("Logged out successfully!")
 
 def main():
     st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", ["Google Drive Viewer", "Backtesting Page", "Data Storage"])
+    page = st.sidebar.radio("Go to", ["Data Storage", "Backtesting Page"])
 
-    # Generate a unique session ID
-    session_id = st.query_params.get('session_id', None)
-    if not session_id:
-        session_id = str(uuid.uuid4())
-        st.query_params['session_id'] = session_id
-
-    if page == "Google Drive Viewer":
-        st.title("Google Drive Folder Viewer")
-        if st.button("Login with Google"):
-            creds = authenticate_google()
-            if creds:
-                list_google_drive_folders(creds)
-        if st.button("Logout"):
-            logout()
+    if page == "Data Storage":
+        data_storage_page()
     elif page == "Backtesting Page":
         backtest_page()
-    elif page == "Data Storage":
-        creds = authenticate_google()
-        if creds:
-            data_storage_page(creds)
 
 if __name__ == '__main__':
     main()
