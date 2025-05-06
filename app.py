@@ -130,7 +130,7 @@ def clean_uploaded_data(df):
     return df
 
 def remove_headers_from_all_data():
-    """Remove header rows from all stored dataframes."""
+    """Remove header rows from all stored dataframes but keep column names for display."""
     if not st.session_state['dataframes']:
         st.warning("No data available to process.")
         return
@@ -138,20 +138,13 @@ def remove_headers_from_all_data():
     for file_name in st.session_state['csv_files']:
         df = st.session_state['dataframes'][file_name]
         
-        # Create a new dataframe without headers
-        # We'll keep the column names in the DataFrame object for internal use
-        # but when exporting or displaying, we can choose not to show them
-        
-        # Store the column names for reference
-        column_names = df.columns.tolist()
-        
-        # Add a flag to indicate this dataframe has no headers
-        df.attrs['no_headers'] = True
+        # Add a flag to indicate this dataframe should use standard column names
+        df.attrs['use_standard_headers'] = True
         
         # Update the dataframe in session state
         st.session_state['dataframes'][file_name] = df
     
-    st.success("Headers removed from all data files.")
+    st.success("Headers standardized for all data files.")
 
 def data_storage_page():
     """Data Storage page to download and store stock data."""
@@ -171,7 +164,7 @@ def data_storage_page():
 
     # Remove headers from all data
     if st.session_state['csv_files']:
-        if st.button("Remove Headers From All Data"):
+        if st.button("Use Standard Column Names"):
             remove_headers_from_all_data()
 
     # View stored data
@@ -185,16 +178,21 @@ def data_storage_page():
                 if df is not None:
                     st.write(f"#### File: {file_name}")
                     
-                    # Check if this dataframe has the no_headers flag
-                    has_no_headers = df.attrs.get('no_headers', False)
-                    
                     # Display the dataframe
-                    if has_no_headers:
-                        # Display without headers
-                        st.write("(Headers removed)")
-                        st.dataframe(df.head(10).to_numpy())
+                    if df.attrs.get('use_standard_headers', False):
+                        # Display with standard column names
+                        st.write("(Using standard column names)")
+                        # Create a copy with standard column names
+                        display_df = df.head(10).copy()
+                        # Ensure we have the right number of columns before renaming
+                        if len(display_df.columns) == 7:
+                            display_df.columns = ['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+                            st.dataframe(display_df)
+                        else:
+                            # If column count doesn't match, just display with original columns
+                            st.dataframe(df.head(10))
                     else:
-                        # Display with headers
+                        # Display with original headers
                         st.dataframe(df.head(10))
                 else:
                     st.error(f"Error loading {file_name}")
