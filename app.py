@@ -371,15 +371,20 @@ def backtest_page():
     # Calculate Ratio
     comparison_df['Ratio'] = comparison_df[stock1] / comparison_df[stock2]
     
+    # Add a section for correlation and cointegration lookback
+    st.header("Statistical Analysis Parameters")
+    stat_lookback = st.number_input("Correlation & Cointegration Lookback Period (days)", 
+                                   min_value=30, 
+                                   value=100, 
+                                   help="Number of days to use for correlation and cointegration analysis")
+    
     # Add input boxes for Z-Score lookback and RSI period
-    st.header("Adjust Parameters")
+    st.header("Trading Parameters")
     col1, col2 = st.columns(2)
     with col1:
         zscore_lookback = st.number_input("Z-Score Lookback Period (days)", min_value=1, value=50, key="zscore_lookback")
-        correlation_lookback = st.number_input("Correlation Lookback Period (days)", min_value=30, value=100, key="correlation_lookback")
     with col2:
         rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14, key="rsi_period")
-        cointegration_lookback = st.number_input("Cointegration Lookback Period (days)", min_value=30, value=100, key="cointegration_lookback")
     
     # Add RSI checkboxes with a more visible style
     st.markdown("### RSI Settings")
@@ -447,13 +452,7 @@ def backtest_page():
     
     # Add a "Go" button
     if st.button("Go"):
-        # Calculate Z-Score of Ratio
-        comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=zscore_lookback)
-        
-        # Calculate RSI of Ratio
-        comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
-        
-        # Perform correlation and cointegration analysis with lookback periods
+        # First perform correlation and cointegration analysis
         st.header("Pair Statistics")
         
         try:
@@ -464,31 +463,25 @@ def backtest_page():
             # Sort by Date (oldest first)
             comparison_df = comparison_df.sort_values(by='Date', ascending=True)
             
-            # Use the lookback periods for correlation and cointegration
-            if len(comparison_df) > correlation_lookback:
-                corr_df = comparison_df.tail(correlation_lookback)
+            # Use the lookback period for correlation and cointegration
+            if len(comparison_df) > stat_lookback:
+                stat_df = comparison_df.tail(stat_lookback)
             else:
-                corr_df = comparison_df
-                st.warning(f"Not enough data for specified correlation lookback period. Using all available data ({len(comparison_df)} days).")
-            
-            if len(comparison_df) > cointegration_lookback:
-                coint_df = comparison_df.tail(cointegration_lookback)
-            else:
-                coint_df = comparison_df
-                st.warning(f"Not enough data for specified cointegration lookback period. Using all available data ({len(comparison_df)} days).")
+                stat_df = comparison_df
+                st.warning(f"Not enough data for specified lookback period. Using all available data ({len(comparison_df)} days).")
             
             # Calculate correlation
-            correlation = corr_df[stock1].corr(corr_df[stock2])
+            correlation = stat_df[stock1].corr(stat_df[stock2])
             
             # Run cointegration test
-            coint_result, spread, model = test_cointegration(coint_df[stock1], coint_df[stock2])
+            coint_result, spread, model = test_cointegration(stat_df[stock1], stat_df[stock2])
             
             # Display results in two columns
             col1, col2 = st.columns(2)
             
             with col1:
                 st.subheader("Correlation Analysis")
-                st.write(f"**Lookback Period:** {len(corr_df)} days")
+                st.write(f"**Lookback Period:** {len(stat_df)} days")
                 st.write(f"**Pearson Correlation:** {correlation:.4f}")
                 
                 # Interpret correlation
@@ -508,7 +501,7 @@ def backtest_page():
             
             with col2:
                 st.subheader("Cointegration Analysis")
-                st.write(f"**Lookback Period:** {len(coint_df)} days")
+                st.write(f"**Lookback Period:** {len(stat_df)} days")
                 st.write(f"**ADF Test Statistic:** {coint_result['ADF Statistic']:.4f}")
                 st.write(f"**p-value:** {coint_result['p-value']:.4f}")
                 
@@ -523,6 +516,12 @@ def backtest_page():
             
         except Exception as e:
             st.error(f"Error in correlation/cointegration analysis: {e}")
+        
+        # Calculate Z-Score of Ratio
+        comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=zscore_lookback)
+        
+        # Calculate RSI of Ratio
+        comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
         
         # Convert Date column to datetime if it's not already
         if not pd.api.types.is_datetime64_any_dtype(comparison_df['Date']):
