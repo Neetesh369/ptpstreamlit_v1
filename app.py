@@ -83,30 +83,8 @@ def calculate_rsi(series, window=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def clean_dataframe(df, symbol_name):
-    """
-    Clean the dataframe by removing the first row (index 0).
-    This follows the exact same logic from the previous working code.
-    """
-    # Display the original dataframe for debugging
-    st.write(f"Original dataframe for {symbol_name}:")
-    st.dataframe(df.head(5))
-    
-    # Remove the first row (index 0) if there are at least 2 rows
-    if len(df) > 1:  # Check if there are at least 2 rows
-        df = df.drop(0).reset_index(drop=True)  # Drop the first row and reset index
-        st.success(f"Removed first row from {symbol_name}.")
-    else:
-        st.warning(f"File {symbol_name} has only 1 row. Skipping...")
-    
-    # Display the cleaned dataframe for debugging
-    st.write(f"Cleaned dataframe for {symbol_name}:")
-    st.dataframe(df.head(5))
-    
-    return df
-
 def download_historical_data(symbol_file_path, start_date, end_date):
-    """Download historical data from Yahoo Finance and store in Streamlit's persistent storage."""
+    """Download historical data from Yahoo Finance, clean it, and store in Streamlit's persistent storage."""
     try:
         # Read the symbol file
         symbols = pd.read_csv(symbol_file_path, header=None).iloc[:, 0].tolist()
@@ -132,8 +110,9 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             # Rearrange columns
             data = data[['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
             
-            # Clean the data
-            data = clean_dataframe(data, symbol)
+            # Clean the data (remove first two rows if they exist)
+            if len(data) > 2:
+                data = data.iloc[2:].reset_index(drop=True)
             
             # Save to Streamlit's persistent storage
             if save_dataframe(f"{symbol}.csv", data):
@@ -144,39 +123,35 @@ def download_historical_data(symbol_file_path, start_date, end_date):
         except Exception as e:
             st.error(f"Error downloading data for {symbol}: {e}")
 
-def manual_clean_all_data():
-    """Manually clean all stored dataframes by removing the first row (index 0)."""
-    if not st.session_state['csv_files']:
-        st.warning("No data available to clean.")
+def clean_uploaded_data(df):
+    """Clean the uploaded data by removing the first two rows if they exist."""
+    if len(df) > 2:
+        return df.iloc[2:].reset_index(drop=True)
+    return df
+
+def remove_headers_from_all_data():
+    """Remove header rows from all stored dataframes."""
+    if not st.session_state['dataframes']:
+        st.warning("No data available to process.")
         return
     
-    cleaned_count = 0
     for file_name in st.session_state['csv_files']:
-        df = load_dataframe(file_name)
-        if df is not None:
-            # Display the first few rows before cleaning
-            st.write(f"**Before cleaning {file_name}:**")
-            st.dataframe(df.head(3))
-            
-            # Remove the first row (index 0) if there are at least 2 rows
-            if len(df) > 1:  # Check if there are at least 2 rows
-                df = df.drop(0).reset_index(drop=True)  # Drop the first row and reset index
-                
-                # Display the first few rows after cleaning
-                st.write(f"**After cleaning {file_name}:**")
-                st.dataframe(df.head(3))
-                
-                # Save back to session state
-                save_dataframe(file_name, df)
-                cleaned_count += 1
-                st.success(f"Removed first row from {file_name}.")
-            else:
-                st.warning(f"File {file_name} has only 1 row. Skipping...")
+        df = st.session_state['dataframes'][file_name]
+        
+        # Create a new dataframe without headers
+        # We'll keep the column names in the DataFrame object for internal use
+        # but when exporting or displaying, we can choose not to show them
+        
+        # Store the column names for reference
+        column_names = df.columns.tolist()
+        
+        # Add a flag to indicate this dataframe has no headers
+        df.attrs['no_headers'] = True
+        
+        # Update the dataframe in session state
+        st.session_state['dataframes'][file_name] = df
     
-    if cleaned_count > 0:
-        st.success(f"Successfully cleaned {cleaned_count} files by removing the first row.")
-    else:
-        st.info("No files needed cleaning.")
+    st.success("Headers removed from all data files.")
 
 def data_storage_page():
     """Data Storage page to download and store stock data."""
@@ -194,9 +169,10 @@ def data_storage_page():
     if st.button("Download Data"):
         download_historical_data(symbol_file_path, start_date, end_date)
 
-    # Add a button to manually clean all data
-    if st.button("Remove First Row From All Data"):
-        manual_clean_all_data()
+    # Remove headers from all data
+    if st.session_state['csv_files']:
+        if st.button("Remove Headers From All Data"):
+            remove_headers_from_all_data()
 
     # View stored data
     if st.button("View Stored Data"):
@@ -208,7 +184,18 @@ def data_storage_page():
                 df = load_dataframe(file_name)
                 if df is not None:
                     st.write(f"#### File: {file_name}")
-                    st.dataframe(df.head(10))  # Display the first 10 rows
+                    
+                    # Check if this dataframe has the no_headers flag
+                    has_no_headers = df.attrs.get('no_headers', False)
+                    
+                    # Display the dataframe
+                    if has_no_headers:
+                        # Display without headers
+                        st.write("(Headers removed)")
+                        st.dataframe(df.head(10).to_numpy())
+                    else:
+                        # Display with headers
+                        st.dataframe(df.head(10))
                 else:
                     st.error(f"Error loading {file_name}")
     
@@ -219,17 +206,12 @@ def data_storage_page():
         try:
             # Read the uploaded file
             df = pd.read_csv(uploaded_file)
-            
-            # Get the symbol name from the file name
-            file_name = uploaded_file.name
-            symbol_name = file_name
-            if symbol_name.endswith('.csv'):
-                symbol_name = symbol_name[:-4]
-            
-            # Clean the dataframe
-            df = clean_dataframe(df, symbol_name)
+        
+            # Clean the data
+            df = clean_uploaded_data(df)
         
             # Save to Streamlit's persistent storage
+            file_name = uploaded_file.name
             if save_dataframe(file_name, df):
                 st.success(f"File {file_name} uploaded and cleaned successfully")
             else:
