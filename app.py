@@ -110,9 +110,9 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             # Rearrange columns
             data = data[['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
             
-            # Clean the data (remove first two rows if they exist)
-            if len(data) > 2:
-                data = data.iloc[2:].reset_index(drop=True)
+            # Clean the data (remove only the second row if it exists)
+            if len(data) > 1:
+                data = data.drop(index=1).reset_index(drop=True)
             
             # Save to Streamlit's persistent storage
             if save_dataframe(f"{symbol}.csv", data):
@@ -124,10 +124,32 @@ def download_historical_data(symbol_file_path, start_date, end_date):
             st.error(f"Error downloading data for {symbol}: {e}")
 
 def clean_uploaded_data(df):
-    """Clean the uploaded data by removing the first two rows if they exist."""
-    if len(df) > 2:
-        return df.iloc[2:].reset_index(drop=True)
+    """Clean the uploaded data by removing only the second row if it exists."""
+    if len(df) > 1:
+        return df.drop(index=1).reset_index(drop=True)
     return df
+
+def remove_second_row_from_all_data():
+    """Remove the second row from all stored dataframes."""
+    if not st.session_state['csv_files']:
+        st.warning("No data available to clean.")
+        return
+    
+    cleaned_count = 0
+    for file_name in st.session_state['csv_files']:
+        df = load_dataframe(file_name)
+        if df is not None and len(df) > 1:
+            # Remove the second row (index 1)
+            df = df.drop(index=1).reset_index(drop=True)
+            
+            # Save back to session state
+            save_dataframe(file_name, df)
+            cleaned_count += 1
+    
+    if cleaned_count > 0:
+        st.success(f"Successfully removed the second row from {cleaned_count} files.")
+    else:
+        st.info("No files needed cleaning.")
 
 def data_storage_page():
     """Data Storage page to download and store stock data."""
@@ -144,6 +166,10 @@ def data_storage_page():
     # Download data
     if st.button("Download Data"):
         download_historical_data(symbol_file_path, start_date, end_date)
+
+    # Add a button to remove the second row from all data
+    if st.button("Remove Second Row From All Data"):
+        remove_second_row_from_all_data()
 
     # View stored data
     if st.button("View Stored Data"):
