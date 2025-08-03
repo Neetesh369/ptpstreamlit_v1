@@ -253,8 +253,8 @@ def test_cointegration(series1, series2):
         'p-value': adf_result[1],
         'Critical Values': adf_result[4],
         'Is Cointegrated': adf_result[1] < 0.05,  # p-value < 0.05 indicates cointegration
-        'Regression Coefficient': model.params.iloc[1],
-        'Regression Intercept': model.params.iloc[0],
+        'Regression Coefficient': model.params[1],
+        'Regression Intercept': model.params[0],
         'Regression R-squared': model.rsquared
     }
     
@@ -648,15 +648,7 @@ def backtest_page():
         
         # Add debugging information
         st.header("🔍 Trading Parameters Debug")
-        
-        # Create date range string safely
-        if len(trading_df) > 0:
-            start_date_str = trading_df['Date'].min().strftime('%Y-%m-%d')
-            end_date_str = trading_df['Date'].max().strftime('%Y-%m-%d')
-            date_range_str = f"{start_date_str} to {end_date_str}"
-        else:
-            date_range_str = "No data"
-        
+        # FIX: Convert all values to string to avoid pyarrow serialization error
         debug_params = {
             'Parameter': [
                 'Long Entry Z-Score', 'Long Exit Z-Score', 'Short Entry Z-Score', 'Short Exit Z-Score',
@@ -668,7 +660,7 @@ def backtest_page():
                 str(long_entry_zscore), str(long_exit_zscore), str(short_entry_zscore), str(short_exit_zscore),
                 str(long_entry_rsi), str(long_exit_rsi), str(short_entry_rsi), str(short_exit_rsi),
                 str(use_rsi_for_entry), str(use_rsi_for_exit), str(max_days_in_trade), str(target_profit_pct), str(stop_loss_pct),
-                str(len(trading_df)), date_range_str
+                str(len(trading_df)), f"{trading_df['Date'].min().strftime('%Y-%m-%d')} to {trading_df['Date'].max().strftime('%Y-%m-%d')}"
             ]
         }
         debug_params_df = pd.DataFrame(debug_params)
@@ -804,6 +796,7 @@ def backtest_page():
             
             # Add statistical summary
             st.subheader("Ratio Statistics")
+            # FIX: Convert all values to string to avoid pyarrow serialization error
             ratio_stats = {
                 'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Current Z-Score', 'Current RSI'],
                 'Value': [
@@ -821,336 +814,329 @@ def backtest_page():
         except Exception as e:
             st.error(f"Error in correlation/cointegration analysis: {e}")
             
-            # Debug information
-            debug_info = []
-            trades = [] # Initialize trades list
-            trade_count = 0
-            
-            # Track previous Z-score for crossover detection
-            prev_zscore = None
-            in_trade = False
-            trade_type = None
-            entry_price = None
-            entry_date = None
-            entry_index = None
+        # The backtesting logic starts here
+        # Debug information
+        debug_info = []
+        trades = [] # Initialize trades list
+        trade_count = 0
+        
+        # Track previous Z-score for crossover detection
+        prev_zscore = None
+        in_trade = False
+        trade_type = None
+        entry_price = None
+        entry_date = None
+        entry_index = None
 
-            for index, row in trading_df.iterrows():
-                current_date = row['Date']
-                current_zscore = row['Z-Score']
-                current_rsi = row['RSI']
-                current_ratio = row['Ratio']
-                
-                # Debug data for this row
-                row_debug = {
-                    'Date': current_date,
-                    'Z-Score': current_zscore,
-                    'RSI': current_rsi,
-                    'Ratio': current_ratio,
-                    'Action': 'None'
-                }
-                
-                # Check for trade exit conditions if in a trade
-                if in_trade:
-                    days_in_trade = (current_date - entry_date).days
-                    
-                    if trade_type == 'Long':
-                        current_profit_pct = ((current_ratio - entry_price) / entry_price) * 100
-                        
-                        # Check exit conditions for long trade
-                        zscore_exit = current_zscore >= long_exit_zscore  # Exit when Z-score goes above exit threshold
-                        rsi_exit = use_rsi_for_exit and current_rsi >= long_exit_rsi
-                        time_exit = days_in_trade >= max_days_in_trade
-                        target_exit = current_profit_pct >= target_profit_pct
-                        stop_exit = current_profit_pct <= -stop_loss_pct
-                        
-                        # Debug exit conditions
-                        st.info(f"🔍 Long Trade Debug - Z-Score: {current_zscore:.2f} (Exit at: {long_exit_zscore}), RSI: {current_rsi:.2f} (Exit at: {long_exit_rsi}), Profit: {current_profit_pct:.2f}%, Days: {days_in_trade}")
-                        st.info(f"🔍 Exit Conditions - Z-Score: {zscore_exit}, RSI: {rsi_exit}, Time: {time_exit}, Target: {target_exit}, Stop: {stop_exit}")
-                        
-                        # Determine exit reason with priority
-                        exit_reason = None
-                        if target_exit:
-                            exit_reason = "Target"
-                        elif stop_exit:
-                            exit_reason = "Stop Loss"
-                        elif time_exit:
-                            exit_reason = "Time"
-                        elif zscore_exit:
-                            exit_reason = "Z-Score"
-                        elif rsi_exit:
-                            exit_reason = "RSI"
-                        
-                        if exit_reason:
-                            # Exit long trade
-                            exit_price = current_ratio
-                            profit = exit_price - entry_price
-                            profit_pct = (profit / entry_price) * 100
-                            
-                            trades.append({
-                                'Entry Date': entry_date,
-                                'Exit Date': current_date,
-                                'Days in Trade': days_in_trade,
-                                'Entry Price': entry_price,
-                                'Exit Price': exit_price,
-                                'Profit': profit,
-                                'Profit %': profit_pct,
-                                'Type': 'Long',
-                                'Exit Reason': exit_reason
-                            })
-                            
-                            st.info(f"🔍 Added Long trade: Entry={entry_date}, Exit={current_date}, Profit={profit:.2f}")
-                            
-                            row_debug['Action'] = f'Exit Long: {exit_reason}'
-                            
-                            in_trade = False
-                            trade_type = None
-                            entry_price = None
-                            entry_date = None
-                            entry_index = None
-                    
-                    elif trade_type == 'Short':
-                        current_profit_pct = ((entry_price - current_ratio) / entry_price) * 100
-                        
-                        # Check exit conditions for short trade
-                        zscore_exit = current_zscore <= short_exit_zscore  # Exit when Z-score goes below exit threshold
-                        rsi_exit = use_rsi_for_exit and current_rsi <= short_exit_rsi
-                        time_exit = days_in_trade >= max_days_in_trade
-                        target_exit = current_profit_pct >= target_profit_pct
-                        stop_exit = current_profit_pct <= -stop_loss_pct
-                        
-                        # Debug exit conditions
-                        st.info(f"🔍 Short Trade Debug - Z-Score: {current_zscore:.2f} (Exit at: {short_exit_zscore}), RSI: {current_rsi:.2f} (Exit at: {short_exit_rsi}), Profit: {current_profit_pct:.2f}%, Days: {days_in_trade}")
-                        st.info(f"🔍 Exit Conditions - Z-Score: {zscore_exit}, RSI: {rsi_exit}, Time: {time_exit}, Target: {target_exit}, Stop: {stop_exit}")
-                        
-                        # Determine exit reason with priority
-                        exit_reason = None
-                        if target_exit:
-                            exit_reason = "Target"
-                        elif stop_exit:
-                            exit_reason = "Stop Loss"
-                        elif time_exit:
-                            exit_reason = "Time"
-                        elif zscore_exit:
-                            exit_reason = "Z-Score"
-                        elif rsi_exit:
-                            exit_reason = "RSI"
-                        
-                        if exit_reason:
-                            # Exit short trade
-                            exit_price = current_ratio
-                            profit = entry_price - exit_price
-                            profit_pct = (profit / entry_price) * 100
-                            
-                            trades.append({
-                                'Entry Date': entry_date,
-                                'Exit Date': current_date,
-                                'Days in Trade': days_in_trade,
-                                'Entry Price': entry_price,
-                                'Exit Price': exit_price,
-                                'Profit': profit,
-                                'Profit %': profit_pct,
-                                'Type': 'Short',
-                                'Exit Reason': exit_reason
-                            })
-                            
-                            st.info(f"🔍 Added Short trade: Entry={entry_date}, Exit={current_date}, Profit={profit:.2f}")
-                            
-                            row_debug['Action'] = f'Exit Short: {exit_reason}'
-                            
-                            in_trade = False
-                            trade_type = None
-                            entry_price = None
-                            entry_date = None
-                            entry_index = None
-                
-                # Check for new trade entries (only if not in a trade)
-                elif not in_trade and prev_zscore is not None:
-                    # Check for crossover-based entries
-                    long_crossover = prev_zscore > long_entry_zscore and current_zscore <= long_entry_zscore
-                    short_crossover = prev_zscore < short_entry_zscore and current_zscore >= short_entry_zscore
-                    
-                    # Check RSI conditions
-                    long_rsi_ok = not use_rsi_for_entry or current_rsi <= long_entry_rsi
-                    short_rsi_ok = not use_rsi_for_entry or current_rsi >= short_entry_rsi
-                    
-                    # Enter long trade if crossover and RSI conditions are met
-                    if long_crossover and long_rsi_ok:
-                        in_trade = True
-                        trade_type = 'Long'
-                        entry_price = current_ratio
-                        entry_date = current_date
-                        entry_index = index
-                        row_debug['Action'] = f'Enter Long (Crossover: {prev_zscore:.2f} → {current_zscore:.2f})'
-                        trade_count += 1
-                        st.info(f"🔍 Entered Long trade: Date={current_date}, Price={current_ratio:.4f}")
-                    
-                    # Enter short trade if crossover and RSI conditions are met
-                    elif short_crossover and short_rsi_ok:
-                        in_trade = True
-                        trade_type = 'Short'
-                        entry_price = current_ratio
-                        entry_date = current_date
-                        entry_index = index
-                        row_debug['Action'] = f'Enter Short (Crossover: {prev_zscore:.2f} → {current_zscore:.2f})'
-                        trade_count += 1
-                        st.info(f"🔍 Entered Short trade: Date={current_date}, Price={current_ratio:.4f}")
-                
-                # Update previous Z-score for next iteration
-                prev_zscore = current_zscore
-                
-                # Add debug info for this row
-                debug_info.append(row_debug)
+        for index, row in trading_df.iterrows():
+            current_date = row['Date']
+            current_zscore = row['Z-Score']
+            current_rsi = row['RSI']
+            current_ratio = row['Ratio']
             
-            # Close any open trades at the end of the data
+            # Debug data for this row
+            row_debug = {
+                'Date': current_date,
+                'Z-Score': current_zscore,
+                'RSI': current_rsi,
+                'Ratio': current_ratio,
+                'Action': 'None'
+            }
+            
+            # Check for trade exit conditions if in a trade
             if in_trade:
-                last_row = trading_df.iloc[-1]
-                days_in_trade = (last_row['Date'] - entry_date).days
-                exit_price = last_row['Ratio']
+                days_in_trade = (current_date - entry_date).days
+                
+                if trade_type == 'Long':
+                    current_profit_pct = ((current_ratio - entry_price) / entry_price) * 100
+                    
+                    # Check exit conditions for long trade
+                    zscore_exit = current_zscore >= long_exit_zscore  # Exit when Z-score goes above exit threshold
+                    rsi_exit = use_rsi_for_exit and current_rsi >= long_exit_rsi
+                    time_exit = days_in_trade >= max_days_in_trade
+                    target_exit = current_profit_pct >= target_profit_pct
+                    stop_exit = current_profit_pct <= -stop_loss_pct
+                    
+                    # Determine exit reason with priority
+                    exit_reason = None
+                    if target_exit:
+                        exit_reason = "Target"
+                    elif stop_exit:
+                        exit_reason = "Stop Loss"
+                    elif time_exit:
+                        exit_reason = "Time"
+                    elif zscore_exit:
+                        exit_reason = "Z-Score"
+                    elif rsi_exit:
+                        exit_reason = "RSI"
+                    
+                    if exit_reason:
+                        # Exit long trade
+                        exit_price = current_ratio
+                        profit = exit_price - entry_price
+                        profit_pct = (profit / entry_price) * 100
+                        
+                        trades.append({
+                            'Entry Date': entry_date,
+                            'Exit Date': current_date,
+                            'Days in Trade': days_in_trade,
+                            'Entry Price': entry_price,
+                            'Exit Price': exit_price,
+                            'Profit': profit,
+                            'Profit %': profit_pct,
+                            'Type': 'Long',
+                            'Exit Reason': exit_reason
+                        })
+                        
+                        row_debug['Action'] = f'Exit Long: {exit_reason}'
+                        
+                        in_trade = False
+                        trade_type = None
+                        entry_price = None
+                        entry_date = None
+                        entry_index = None
+                
+                elif trade_type == 'Short':
+                    current_profit_pct = ((entry_price - current_ratio) / entry_price) * 100
+                    
+                    # Check exit conditions for short trade
+                    zscore_exit = current_zscore <= short_exit_zscore  # Exit when Z-score goes below exit threshold
+                    rsi_exit = use_rsi_for_exit and current_rsi <= short_exit_rsi
+                    time_exit = days_in_trade >= max_days_in_trade
+                    target_exit = current_profit_pct >= target_profit_pct
+                    stop_exit = current_profit_pct <= -stop_loss_pct
+                    
+                    # Determine exit reason with priority
+                    exit_reason = None
+                    if target_exit:
+                        exit_reason = "Target"
+                    elif stop_exit:
+                        exit_reason = "Stop Loss"
+                    elif time_exit:
+                        exit_reason = "Time"
+                    elif zscore_exit:
+                        exit_reason = "Z-Score"
+                    elif rsi_exit:
+                        exit_reason = "RSI"
+                    
+                    if exit_reason:
+                        # Exit short trade
+                        exit_price = current_ratio
+                        profit = entry_price - exit_price
+                        profit_pct = (profit / entry_price) * 100
+                        
+                        trades.append({
+                            'Entry Date': entry_date,
+                            'Exit Date': current_date,
+                            'Days in Trade': days_in_trade,
+                            'Entry Price': entry_price,
+                            'Exit Price': exit_price,
+                            'Profit': profit,
+                            'Profit %': profit_pct,
+                            'Type': 'Short',
+                            'Exit Reason': exit_reason
+                        })
+                        
+                        row_debug['Action'] = f'Exit Short: {exit_reason}'
+                        
+                        in_trade = False
+                        trade_type = None
+                        entry_price = None
+                        entry_date = None
+                        entry_index = None
+            
+            # Check for new trade entries (only if not in a trade)
+            elif not in_trade and prev_zscore is not None:
+                # Check for crossover-based entries
+                long_crossover = prev_zscore > long_entry_zscore and current_zscore <= long_entry_zscore
+                short_crossover = prev_zscore < short_entry_zscore and current_zscore >= short_entry_zscore
+                
+                # Check RSI conditions
+                long_rsi_ok = not use_rsi_for_entry or current_rsi <= long_entry_rsi
+                short_rsi_ok = not use_rsi_for_entry or current_rsi >= short_entry_rsi
+                
+                # Enter long trade if crossover and RSI conditions are met
+                if long_crossover and long_rsi_ok:
+                    in_trade = True
+                    trade_type = 'Long'
+                    entry_price = current_ratio
+                    entry_date = current_date
+                    entry_index = index
+                    row_debug['Action'] = f'Enter Long (Crossover: {prev_zscore:.2f} → {current_zscore:.2f})'
+                    trade_count += 1
+                
+                # Enter short trade if crossover and RSI conditions are met
+                elif short_crossover and short_rsi_ok:
+                    in_trade = True
+                    trade_type = 'Short'
+                    entry_price = current_ratio
+                    entry_date = current_date
+                    entry_index = index
+                    row_debug['Action'] = f'Enter Short (Crossover: {prev_zscore:.2f} → {current_zscore:.2f})'
+                    trade_count += 1
+            
+            # Update previous Z-score for next iteration
+            prev_zscore = current_zscore
+            
+            # Add debug info for this row
+            debug_info.append(row_debug)
+        
+        # Close any open trades at the end of the data
+        if in_trade:
+            last_row = trading_df.iloc[-1]
+            days_in_trade = (last_row['Date'] - entry_date).days
+            exit_price = last_row['Ratio']
+            
+            if trade_type == 'Long':
                 profit = exit_price - entry_price
                 profit_pct = (profit / entry_price) * 100
-                
-                trades.append({
-                    'Entry Date': entry_date,
-                    'Exit Date': last_row['Date'],
-                    'Days in Trade': days_in_trade,
-                    'Entry Price': entry_price,
-                    'Exit Price': exit_price,
-                    'Profit': profit,
-                    'Profit %': profit_pct,
-                    'Type': trade_type,
-                    'Exit Reason': 'End of Data'
-                })
+            else: # Short trade
+                profit = entry_price - exit_price
+                profit_pct = (profit / entry_price) * 100
+
+            trades.append({
+                'Entry Date': entry_date,
+                'Exit Date': last_row['Date'],
+                'Days in Trade': days_in_trade,
+                'Entry Price': entry_price,
+                'Exit Price': exit_price,
+                'Profit': profit,
+                'Profit %': profit_pct,
+                'Type': trade_type,
+                'Exit Reason': 'End of Data'
+            })
+        
+        # Display trade results
+        if trades:
+            trades_df = pd.DataFrame(trades)
             
-            # Display trade results
-            if trades:
-                trades_df = pd.DataFrame(trades)
-                
-                # Debug: Show trade count immediately
-                st.success(f"✅ {len(trades)} trades executed successfully!")
-                
-                # Create date-wise trade results table
-                st.header("📊 Date-wise Trade Results")
-                
-                # Prepare the trade results table with requested columns
-                trade_results_table = trades_df.copy()
-                trade_results_table['Date'] = trade_results_table['Entry Date'].dt.strftime('%Y-%m-%d')
-                trade_results_table['Long Stock'] = stock1
-                trade_results_table['Short Stock'] = stock2
-                trade_results_table['Profit/Loss %'] = trade_results_table['Profit %'].round(2)
-                trade_results_table['Holding Period (Days)'] = trade_results_table['Days in Trade']
-                
-                # Select and rename columns for display
-                display_columns = ['Date', 'Long Stock', 'Short Stock', 'Profit/Loss %', 'Holding Period (Days)', 'Type', 'Exit Reason']
-                trade_display = trade_results_table[display_columns].copy()
-                
-                # Display the trade results table
-                st.dataframe(trade_display, use_container_width=True, hide_index=True)
-                
-                # Create a debug dataframe
-                debug_df = pd.DataFrame(debug_info)
-                
-                # Show debug information (only rows with actions)
-                st.header("Trade Actions Log")
-                action_debug_df = debug_df[debug_df['Action'] != 'None']
-                st.dataframe(action_debug_df, hide_index=True)
-                
-                # Calculate comprehensive trade summary metrics
-                total_trades = len(trades_df)
-                winning_trades = trades_df[trades_df['Profit'] > 0]
-                losing_trades = trades_df[trades_df['Profit'] <= 0]
-                
-                # Basic metrics
-                win_rate = (len(winning_trades) / total_trades) * 100 if total_trades > 0 else 0
-                lose_rate = (len(losing_trades) / total_trades) * 100 if total_trades > 0 else 0
-                
-                # Profit/Loss metrics
-                avg_win_pct = winning_trades['Profit %'].mean() if len(winning_trades) > 0 else 0
-                avg_loss_pct = losing_trades['Profit %'].mean() if len(losing_trades) > 0 else 0
-                
-                # Holding period metrics
-                avg_holding_period = trades_df['Days in Trade'].mean()
-                max_holding_period = trades_df['Days in Trade'].max()
-                
-                # Drawdown calculation
-                cumulative_profit = trades_df['Profit'].cumsum()
-                running_max = cumulative_profit.expanding().max()
-                drawdown = (cumulative_profit - running_max) / running_max * 100
-                max_drawdown_pct = drawdown.min()
-                
-                # Total profit
-                total_profit = trades_df['Profit'].sum()
-                
-                # Display comprehensive trade summary
-                st.header("📈 Trade Summary")
-                summary_data = {
-                    'Metric': [
-                        'Number of Trades',
-                        'Win Rate (%)',
-                        'Lose Rate (%)',
-                        'Max Drawdown (%)',
-                        'Avg Win (%)',
-                        'Avg Loss (%)',
-                        'Avg Holding Period (Days)',
-                        'Max Holding Period (Days)',
-                        'Total Profit ($)'
-                    ],
-                    'Value': [
-                        total_trades,
-                        f"{win_rate:.2f}",
-                        f"{lose_rate:.2f}",
-                        f"{max_drawdown_pct:.2f}",
-                        f"{avg_win_pct:.2f}",
-                        f"{avg_loss_pct:.2f}",
-                        f"{avg_holding_period:.1f}",
-                        max_holding_period,
-                        f"{total_profit:.2f}"
-                    ]
-                }
-                summary_df = pd.DataFrame(summary_data)
-                st.dataframe(summary_df, hide_index=True)
-                
-                # Display exit reason statistics
-                st.subheader("Exit Reasons")
-                exit_reasons = trades_df['Exit Reason'].value_counts()
-                exit_reasons_df = pd.DataFrame({
-                    'Exit Reason': exit_reasons.index,
-                    'Count': exit_reasons.values
-                })
-                st.dataframe(exit_reasons_df, hide_index=True)
-                
-                # Display total profit with color coding
-                if total_profit > 0:
-                    st.success(f"💰 Total Profit: ${total_profit:.2f}")
-                else:
-                    st.error(f"💸 Total Loss: ${total_profit:.2f}")
-                
-                # Calculate and plot Equity Curve
-                trades_df['Cumulative Profit'] = trades_df['Profit'].cumsum()
-                st.header("📊 Equity Curve")
-                st.line_chart(trades_df.set_index('Exit Date')['Cumulative Profit'])
+            # Debug: Show trade count immediately
+            st.success(f"✅ {len(trades)} trades executed successfully!")
+            
+            # Create date-wise trade results table
+            st.header("📊 Date-wise Trade Results")
+            
+            # Prepare the trade results table with requested columns
+            trade_results_table = trades_df.copy()
+            trade_results_table['Date'] = trade_results_table['Entry Date'].dt.strftime('%Y-%m-%d')
+            trade_results_table['Long Stock'] = stock1
+            trade_results_table['Short Stock'] = stock2
+            trade_results_table['Profit/Loss %'] = trade_results_table['Profit %'].round(2)
+            trade_results_table['Holding Period (Days)'] = trade_results_table['Days in Trade']
+            
+            # Select and rename columns for display
+            display_columns = ['Date', 'Long Stock', 'Short Stock', 'Profit/Loss %', 'Holding Period (Days)', 'Type', 'Exit Reason']
+            trade_display = trade_results_table[display_columns].copy()
+            
+            # Display the trade results table
+            st.dataframe(trade_display, use_container_width=True, hide_index=True)
+            
+            # Create a debug dataframe
+            debug_df = pd.DataFrame(debug_info)
+            
+            # Show debug information (only rows with actions)
+            st.header("Trade Actions Log")
+            action_debug_df = debug_df[debug_df['Action'] != 'None']
+            st.dataframe(action_debug_df, hide_index=True)
+            
+            # Calculate comprehensive trade summary metrics
+            total_trades = len(trades_df)
+            winning_trades = trades_df[trades_df['Profit'] > 0]
+            losing_trades = trades_df[trades_df['Profit'] <= 0]
+            
+            # Basic metrics
+            win_rate = (len(winning_trades) / total_trades) * 100 if total_trades > 0 else 0
+            lose_rate = (len(losing_trades) / total_trades) * 100 if total_trades > 0 else 0
+            
+            # Profit/Loss metrics
+            avg_win_pct = winning_trades['Profit %'].mean() if len(winning_trades) > 0 else 0
+            avg_loss_pct = losing_trades['Profit %'].mean() if len(losing_trades) > 0 else 0
+            
+            # Holding period metrics
+            avg_holding_period = trades_df['Days in Trade'].mean()
+            max_holding_period = trades_df['Days in Trade'].max()
+            
+            # Drawdown calculation
+            cumulative_profit = trades_df['Profit'].cumsum()
+            running_max = cumulative_profit.expanding().max()
+            drawdown = (cumulative_profit - running_max) / running_max * 100
+            max_drawdown_pct = drawdown.min()
+            
+            # Total profit
+            total_profit = trades_df['Profit'].sum()
+            
+            # Display comprehensive trade summary
+            st.header("📈 Trade Summary")
+            # FIX: Convert all values to string to avoid pyarrow serialization error
+            summary_data = {
+                'Metric': [
+                    'Number of Trades',
+                    'Win Rate (%)',
+                    'Lose Rate (%)',
+                    'Max Drawdown (%)',
+                    'Avg Win (%)',
+                    'Avg Loss (%)',
+                    'Avg Holding Period (Days)',
+                    'Max Holding Period (Days)',
+                    'Total Profit ($)'
+                ],
+                'Value': [
+                    str(total_trades),
+                    f"{win_rate:.2f}",
+                    f"{lose_rate:.2f}",
+                    f"{max_drawdown_pct:.2f}",
+                    f"{avg_win_pct:.2f}",
+                    f"{avg_loss_pct:.2f}",
+                    f"{avg_holding_period:.1f}",
+                    str(max_holding_period),
+                    f"{total_profit:.2f}"
+                ]
+            }
+            summary_df = pd.DataFrame(summary_data)
+            st.dataframe(summary_df, hide_index=True)
+            
+            # Display exit reason statistics
+            st.subheader("Exit Reasons")
+            exit_reasons = trades_df['Exit Reason'].value_counts()
+            exit_reasons_df = pd.DataFrame({
+                'Exit Reason': exit_reasons.index,
+                'Count': exit_reasons.values
+            })
+            st.dataframe(exit_reasons_df, hide_index=True)
+            
+            # Display total profit with color coding
+            if total_profit > 0:
+                st.success(f"💰 Total Profit: ${total_profit:.2f}")
             else:
-                st.warning("No trades executed based on the provided parameters.")
-                st.info(f"🔍 Debug Info: {trade_count} trade entries detected, but no completed trades.")
-                st.info(f"🔍 Trades list length: {len(trades)}")
+                st.error(f"💸 Total Loss: ${total_profit:.2f}")
+            
+            # Calculate and plot Equity Curve
+            trades_df['Cumulative Profit'] = trades_df['Profit'].cumsum()
+            st.header("📊 Equity Curve")
+            st.line_chart(trades_df.set_index('Exit Date')['Cumulative Profit'])
+        else:
+            st.warning("No trades executed based on the provided parameters.")
+            st.info(f"🔍 Debug Info: {trade_count} trade entries detected, but no completed trades.")
+            st.info(f"🔍 Trades list length: {len(trades)}")
+            
+            # Show some debugging info about why no trades
+            if len(trading_df) > 0:
+                zscore_range = f"Z-Score range: {trading_df['Z-Score'].min():.2f} to {trading_df['Z-Score'].max():.2f}"
+                rsi_range = f"RSI range: {trading_df['RSI'].min():.2f} to {trading_df['RSI'].max():.2f}"
+                st.info(f"📊 Data ranges: {zscore_range}, {rsi_range}")
                 
-                # Show some debugging info about why no trades
-                if len(trading_df) > 0:
-                    zscore_range = f"Z-Score range: {trading_df['Z-Score'].min():.2f} to {trading_df['Z-Score'].max():.2f}"
-                    rsi_range = f"RSI range: {trading_df['RSI'].min():.2f} to {trading_df['RSI'].max():.2f}"
-                    st.info(f"📊 Data ranges: {zscore_range}, {rsi_range}")
-                    
-                    # Check if conditions are too strict
-                    extreme_zscore_count = len(trading_df[(trading_df['Z-Score'] <= long_entry_zscore) | (trading_df['Z-Score'] >= short_entry_zscore)])
-                    st.info(f"📊 Extreme Z-Score conditions met: {extreme_zscore_count} times")
-                    
-                    # Show current parameters
-                    st.info(f"📊 Current Parameters: Long Entry Z-Score: {long_entry_zscore}, Short Entry Z-Score: {short_entry_zscore}")
-                    st.info(f"📊 RSI Entry Enabled: {use_rsi_for_entry}, Long Entry RSI: {long_entry_rsi}, Short Entry RSI: {short_entry_rsi}")
-                    
-                    # Show first few rows of data for debugging
-                    st.subheader("🔍 First 5 rows of trading data:")
-                    debug_data = trading_df[['Date', 'Z-Score', 'RSI', 'Ratio']].head()
-                    st.dataframe(debug_data, hide_index=True)
+                # Check if conditions are too strict
+                extreme_zscore_count = len(trading_df[(trading_df['Z-Score'] <= long_entry_zscore) | (trading_df['Z-Score'] >= short_entry_zscore)])
+                st.info(f"📊 Extreme Z-Score conditions met: {extreme_zscore_count} times")
+                
+                # Show current parameters
+                st.info(f"📊 Current Parameters: Long Entry Z-Score: {long_entry_zscore}, Short Entry Z-Score: {short_entry_zscore}")
+                st.info(f"📊 RSI Entry Enabled: {use_rsi_for_entry}, Long Entry RSI: {long_entry_rsi}, Short Entry RSI: {short_entry_rsi}")
+                
+                # Show first few rows of data for debugging
+                st.subheader("🔍 First 5 rows of trading data:")
+                debug_data = trading_df[['Date', 'Z-Score', 'RSI', 'Ratio']].head()
+                st.dataframe(debug_data, hide_index=True)
 
 def main():
     st.sidebar.title("Navigation")
