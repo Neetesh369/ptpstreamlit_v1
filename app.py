@@ -496,10 +496,7 @@ def backtest_page():
     
     # Add a section for correlation and cointegration lookback
     st.header("Statistical Analysis Parameters")
-    stat_lookback = st.number_input("Correlation & Cointegration Lookback Period (days)", 
-                                   min_value=30, 
-                                   value=100, 
-                                   help="Number of days to use for correlation and cointegration analysis")
+    # Note: All statistical tests now use the entire dataset
     
     # Add input boxes for Z-Score lookback and RSI period
     st.header("Trading Parameters")
@@ -618,23 +615,19 @@ def backtest_page():
             # Sort by Date (oldest first)
             comparison_df = comparison_df.sort_values(by='Date', ascending=True)
             
-            # Use the lookback period for correlation and cointegration
-            if len(comparison_df) > stat_lookback:
-                stat_df = comparison_df.tail(stat_lookback)
-            else:
-                stat_df = comparison_df
-                st.warning(f"Not enough data for specified lookback period. Using all available data ({len(comparison_df)} days).")
+            # Use the entire dataset for correlation and cointegration analysis
+            stat_df = comparison_df
             
-            # Calculate correlation
+            # Calculate correlation using entire dataset
             correlation = stat_df[stock1].corr(stat_df[stock2])
             
-            # Run Engle-Granger cointegration test
+            # Run Engle-Granger cointegration test using entire dataset
             coint_result, spread, model = test_cointegration(stat_df[stock1], stat_df[stock2])
             
-            # Run Johansen cointegration test
+            # Run Johansen cointegration test using entire dataset
             johansen_result = test_johansen_cointegration(stat_df[stock1], stat_df[stock2])
             
-            # Calculate Hurst exponent for the ratio
+            # Calculate Hurst exponent for the ratio using entire dataset
             hurst_exponent = calculate_hurst_exponent(comparison_df['Ratio'])
             
             # Display results in three columns
@@ -642,7 +635,7 @@ def backtest_page():
             
             with col1:
                 st.subheader("Correlation Analysis")
-                st.write(f"**Lookback Period:** {len(stat_df)} days")
+                st.write(f"**Dataset Period:** {len(stat_df)} days")
                 st.write(f"**Pearson Correlation:** {correlation:.4f}")
                 
                 # Interpret correlation
@@ -662,7 +655,7 @@ def backtest_page():
             
             with col2:
                 st.subheader("Engle-Granger Cointegration")
-                st.write(f"**Lookback Period:** {len(stat_df)} days")
+                st.write(f"**Dataset Period:** {len(stat_df)} days")
                 st.write(f"**ADF Test Statistic:** {coint_result['ADF Statistic']:.4f}")
                 st.write(f"**p-value:** {coint_result['p-value']:.4f}")
                 
@@ -674,7 +667,7 @@ def backtest_page():
             
             with col3:
                 st.subheader("Johansen Cointegration")
-                st.write(f"**Lookback Period:** {len(stat_df)} days")
+                st.write(f"**Dataset Period:** {len(stat_df)} days")
                 if johansen_result['Error'] is None:
                     st.write(f"**Trace Statistic:** {johansen_result['Trace Statistic']:.4f}")
                     st.write(f"**Critical Value:** {johansen_result['Critical Value']:.4f}")
