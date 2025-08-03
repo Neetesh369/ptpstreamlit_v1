@@ -994,8 +994,24 @@ def backtest_page():
             # Display trade results
             if trades:
                 trades_df = pd.DataFrame(trades)
-                st.header("Trade Results")
-                st.dataframe(trades_df, hide_index=True)
+                
+                # Create date-wise trade results table
+                st.header("📊 Date-wise Trade Results")
+                
+                # Prepare the trade results table with requested columns
+                trade_results_table = trades_df.copy()
+                trade_results_table['Date'] = trade_results_table['Entry Date'].dt.strftime('%Y-%m-%d')
+                trade_results_table['Long Stock'] = stock1
+                trade_results_table['Short Stock'] = stock2
+                trade_results_table['Profit/Loss %'] = trade_results_table['Profit %'].round(2)
+                trade_results_table['Holding Period (Days)'] = trade_results_table['Days in Trade']
+                
+                # Select and rename columns for display
+                display_columns = ['Date', 'Long Stock', 'Short Stock', 'Profit/Loss %', 'Holding Period (Days)', 'Type', 'Exit Reason']
+                trade_display = trade_results_table[display_columns].copy()
+                
+                # Display the trade results table
+                st.dataframe(trade_display, use_container_width=True, hide_index=True)
                 
                 # Create a debug dataframe
                 debug_df = pd.DataFrame(debug_info)
@@ -1005,54 +1021,56 @@ def backtest_page():
                 action_debug_df = debug_df[debug_df['Action'] != 'None']
                 st.dataframe(action_debug_df, hide_index=True)
                 
-                # Analyze cointegration filter results
-                # Removed cointegration filter analysis
-                
-                # Calculate trade summary metrics
+                # Calculate comprehensive trade summary metrics
                 total_trades = len(trades_df)
                 winning_trades = trades_df[trades_df['Profit'] > 0]
                 losing_trades = trades_df[trades_df['Profit'] <= 0]
-                win_rate = (len(winning_trades) / total_trades) * 100
-                lose_rate = (len(losing_trades) / total_trades) * 100
                 
-                long_trades = trades_df[trades_df['Type'] == 'Long']
-                total_long_trades = len(long_trades)
-                long_winning_trades = long_trades[long_trades['Profit'] > 0]
-                long_win_rate = (len(long_winning_trades) / total_long_trades) * 100 if total_long_trades > 0 else 0
-                long_lose_rate = 100 - long_win_rate
+                # Basic metrics
+                win_rate = (len(winning_trades) / total_trades) * 100 if total_trades > 0 else 0
+                lose_rate = (len(losing_trades) / total_trades) * 100 if total_trades > 0 else 0
                 
-                short_trades = trades_df[trades_df['Type'] == 'Short']
-                total_short_trades = len(short_trades)
-                short_winning_trades = short_trades[short_trades['Profit'] > 0]
-                short_win_rate = (len(short_winning_trades) / total_short_trades) * 100 if total_short_trades > 0 else 0
-                short_lose_rate = 100 - short_win_rate
+                # Profit/Loss metrics
+                avg_win_pct = winning_trades['Profit %'].mean() if len(winning_trades) > 0 else 0
+                avg_loss_pct = losing_trades['Profit %'].mean() if len(losing_trades) > 0 else 0
                 
-                max_drawdown = trades_df['Profit'].cumsum().min()
+                # Holding period metrics
+                avg_holding_period = trades_df['Days in Trade'].mean()
+                max_holding_period = trades_df['Days in Trade'].max()
+                
+                # Drawdown calculation
+                cumulative_profit = trades_df['Profit'].cumsum()
+                running_max = cumulative_profit.expanding().max()
+                drawdown = (cumulative_profit - running_max) / running_max * 100
+                max_drawdown_pct = drawdown.min()
+                
+                # Total profit
                 total_profit = trades_df['Profit'].sum()
-                total_loss = abs(trades_df[trades_df['Profit'] <= 0]['Profit'].sum())
-                profit_factor = total_profit / total_loss if total_loss > 0 else 0
                 
-                # Calculate average profit percentage and average days in trade
-                avg_profit_pct = trades_df['Profit %'].mean()
-                avg_days_in_trade = trades_df['Days in Trade'].mean()
-                
-                # Count exit reasons
-                exit_reasons = trades_df['Exit Reason'].value_counts()
-                
-                # Display trade summary
-                st.header("Trade Summary")
+                # Display comprehensive trade summary
+                st.header("📈 Trade Summary")
                 summary_data = {
                     'Metric': [
-                        'Total Trades', 'Win Rate (%)', 'Lose Rate (%)',
-                        'Total Long Trades', 'Long Win Rate (%)', 'Long Lose Rate (%)',
-                        'Total Short Trades', 'Short Win Rate (%)', 'Short Lose Rate (%)',
-                        'Max Drawdown ($)', 'Profit Factor', 'Avg Profit (%)', 'Avg Days in Trade'
+                        'Number of Trades',
+                        'Win Rate (%)',
+                        'Lose Rate (%)',
+                        'Max Drawdown (%)',
+                        'Avg Win (%)',
+                        'Avg Loss (%)',
+                        'Avg Holding Period (Days)',
+                        'Max Holding Period (Days)',
+                        'Total Profit ($)'
                     ],
                     'Value': [
-                        total_trades, f"{win_rate:.2f}", f"{lose_rate:.2f}",
-                        total_long_trades, f"{long_win_rate:.2f}", f"{long_lose_rate:.2f}",
-                        total_short_trades, f"{short_win_rate:.2f}", f"{short_lose_rate:.2f}",
-                        f"{max_drawdown:.2f}", f"{profit_factor:.2f}", f"{avg_profit_pct:.2f}", f"{avg_days_in_trade:.2f}"
+                        total_trades,
+                        f"{win_rate:.2f}",
+                        f"{lose_rate:.2f}",
+                        f"{max_drawdown_pct:.2f}",
+                        f"{avg_win_pct:.2f}",
+                        f"{avg_loss_pct:.2f}",
+                        f"{avg_holding_period:.1f}",
+                        max_holding_period,
+                        f"{total_profit:.2f}"
                     ]
                 }
                 summary_df = pd.DataFrame(summary_data)
@@ -1060,18 +1078,22 @@ def backtest_page():
                 
                 # Display exit reason statistics
                 st.subheader("Exit Reasons")
+                exit_reasons = trades_df['Exit Reason'].value_counts()
                 exit_reasons_df = pd.DataFrame({
                     'Exit Reason': exit_reasons.index,
                     'Count': exit_reasons.values
                 })
                 st.dataframe(exit_reasons_df, hide_index=True)
                 
-                # Display total profit
-                st.success(f"Total Profit: {total_profit:.2f}")
+                # Display total profit with color coding
+                if total_profit > 0:
+                    st.success(f"💰 Total Profit: ${total_profit:.2f}")
+                else:
+                    st.error(f"💸 Total Loss: ${total_profit:.2f}")
                 
                 # Calculate and plot Equity Curve
                 trades_df['Cumulative Profit'] = trades_df['Profit'].cumsum()
-                st.header("Equity Curve")
+                st.header("📊 Equity Curve")
                 st.line_chart(trades_df.set_index('Exit Date')['Cumulative Profit'])
             else:
                 st.warning("No trades executed based on the provided parameters.")
