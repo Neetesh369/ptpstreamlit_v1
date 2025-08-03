@@ -885,6 +885,8 @@ def backtest_page():
                                 'Exit Reason': exit_reason
                             })
                             
+                            st.info(f"🔍 Added Long trade: Entry={entry_date}, Exit={current_date}, Profit={profit:.2f}")
+                            
                             row_debug['Action'] = f'Exit Long: {exit_reason}'
                             
                             in_trade = False
@@ -934,6 +936,8 @@ def backtest_page():
                                 'Exit Reason': exit_reason
                             })
                             
+                            st.info(f"🔍 Added Short trade: Entry={entry_date}, Exit={current_date}, Profit={profit:.2f}")
+                            
                             row_debug['Action'] = f'Exit Short: {exit_reason}'
                             
                             in_trade = False
@@ -961,6 +965,7 @@ def backtest_page():
                         entry_index = index
                         row_debug['Action'] = f'Enter Long (Crossover: {prev_zscore:.2f} → {current_zscore:.2f})'
                         trade_count += 1
+                        st.info(f"🔍 Entered Long trade: Date={current_date}, Price={current_ratio:.4f}")
                     
                     # Enter short trade if crossover and RSI conditions are met
                     elif short_crossover and short_rsi_ok:
@@ -971,6 +976,7 @@ def backtest_page():
                         entry_index = index
                         row_debug['Action'] = f'Enter Short (Crossover: {prev_zscore:.2f} → {current_zscore:.2f})'
                         trade_count += 1
+                        st.info(f"🔍 Entered Short trade: Date={current_date}, Price={current_ratio:.4f}")
                 
                 # Update previous Z-score for next iteration
                 prev_zscore = current_zscore
@@ -1108,6 +1114,7 @@ def backtest_page():
             else:
                 st.warning("No trades executed based on the provided parameters.")
                 st.info(f"🔍 Debug Info: {trade_count} trade entries detected, but no completed trades.")
+                st.info(f"🔍 Trades list length: {len(trades)}")
                 
                 # Show some debugging info about why no trades
                 if len(trading_df) > 0:
