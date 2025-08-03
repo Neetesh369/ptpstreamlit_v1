@@ -584,6 +584,18 @@ def backtest_page():
     with col3:
         stop_loss_pct = st.number_input("Stop Loss (%)", min_value=0.0, value=3.0, step=0.1, key="stop_loss_pct")
     
+    # Add test mode for debugging (moved here to avoid re-running after Go button)
+    test_mode = st.checkbox("🔧 Test Mode (Simplified Conditions)", value=False, 
+                           help="Use simplified conditions to test if trading logic works")
+    
+    if test_mode:
+        st.warning("🧪 Test Mode Enabled: Using simplified entry conditions for debugging")
+        # Use simpler conditions for testing
+        long_entry_zscore = -1.0  # More relaxed
+        short_entry_zscore = 1.0   # More relaxed
+        use_rsi_for_entry = False  # Disable RSI for testing
+        use_rsi_for_exit = False   # Disable RSI for testing
+    
     # Add a "Go" button
     if st.button("Go"):
         # Data validation
@@ -658,18 +670,6 @@ def backtest_page():
         potential_short_signals = len(trading_df[trading_df['Z-Score'] >= short_entry_zscore])
         
         st.info(f"📊 Potential Signals: {potential_long_signals} long signals, {potential_short_signals} short signals")
-        
-        # Add test mode for debugging
-        test_mode = st.checkbox("🔧 Test Mode (Simplified Conditions)", value=False, 
-                                   help="Use simplified conditions to test if trading logic works")
-        
-        if test_mode:
-            st.warning("🧪 Test Mode Enabled: Using simplified entry conditions for debugging")
-            # Use simpler conditions for testing
-            long_entry_zscore = -1.0  # More relaxed
-            short_entry_zscore = 1.0   # More relaxed
-            use_rsi_for_entry = False  # Disable RSI for testing
-            use_rsi_for_exit = False   # Disable RSI for testing
         
         # First perform correlation and cointegration analysis
         st.header("Pair Statistics")
@@ -1013,6 +1013,9 @@ def backtest_page():
             if trades:
                 trades_df = pd.DataFrame(trades)
                 
+                # Debug: Show trade count immediately
+                st.success(f"✅ {len(trades)} trades executed successfully!")
+                
                 # Create date-wise trade results table
                 st.header("📊 Date-wise Trade Results")
                 
@@ -1126,6 +1129,15 @@ def backtest_page():
                     # Check if conditions are too strict
                     extreme_zscore_count = len(trading_df[(trading_df['Z-Score'] <= long_entry_zscore) | (trading_df['Z-Score'] >= short_entry_zscore)])
                     st.info(f"📊 Extreme Z-Score conditions met: {extreme_zscore_count} times")
+                    
+                    # Show current parameters
+                    st.info(f"📊 Current Parameters: Long Entry Z-Score: {long_entry_zscore}, Short Entry Z-Score: {short_entry_zscore}")
+                    st.info(f"📊 RSI Entry Enabled: {use_rsi_for_entry}, Long Entry RSI: {long_entry_rsi}, Short Entry RSI: {short_entry_rsi}")
+                    
+                    # Show first few rows of data for debugging
+                    st.subheader("🔍 First 5 rows of trading data:")
+                    debug_data = trading_df[['Date', 'Z-Score', 'RSI', 'Ratio']].head()
+                    st.dataframe(debug_data, hide_index=True)
 
 def main():
     st.sidebar.title("Navigation")
