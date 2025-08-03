@@ -659,6 +659,18 @@ def backtest_page():
         
         st.info(f"📊 Potential Signals: {potential_long_signals} long signals, {potential_short_signals} short signals")
         
+        # Add test mode for debugging
+        test_mode = st.checkbox("🔧 Test Mode (Simplified Conditions)", value=False, 
+                                   help="Use simplified conditions to test if trading logic works")
+        
+        if test_mode:
+            st.warning("🧪 Test Mode Enabled: Using simplified entry conditions for debugging")
+            # Use simpler conditions for testing
+            long_entry_zscore = -1.0  # More relaxed
+            short_entry_zscore = 1.0   # More relaxed
+            use_rsi_for_entry = False  # Disable RSI for testing
+            use_rsi_for_exit = False   # Disable RSI for testing
+        
         # First perform correlation and cointegration analysis
         st.header("Pair Statistics")
         
@@ -931,13 +943,19 @@ def backtest_page():
                     short_zscore_condition = current_zscore >= short_entry_zscore
                     short_rsi_condition = not use_rsi_for_entry or current_rsi >= short_entry_rsi
                     
+                    # Debug entry conditions
+                    if long_zscore_condition and not long_rsi_condition:
+                        row_debug['Action'] = f'Long Signal (Z-Score: {current_zscore:.2f} <= {long_entry_zscore}, RSI: {current_rsi:.2f} > {long_entry_rsi})'
+                    elif short_zscore_condition and not short_rsi_condition:
+                        row_debug['Action'] = f'Short Signal (Z-Score: {current_zscore:.2f} >= {short_entry_zscore}, RSI: {current_rsi:.2f} < {short_entry_rsi})'
+                    
                     # Enter long trade if conditions are met
                     if long_zscore_condition and long_rsi_condition:
                         in_long_trade = True
                         long_entry_price = current_ratio
                         long_entry_date = current_date
                         long_entry_index = index
-                        row_debug['Action'] = 'Enter Long'
+                        row_debug['Action'] = f'Enter Long (Z-Score: {current_zscore:.2f}, RSI: {current_rsi:.2f})'
                         trade_count += 1
                     
                     # Enter short trade if conditions are met
@@ -946,7 +964,7 @@ def backtest_page():
                         short_entry_price = current_ratio
                         short_entry_date = current_date
                         short_entry_index = index
-                        row_debug['Action'] = 'Enter Short'
+                        row_debug['Action'] = f'Enter Short (Z-Score: {current_zscore:.2f}, RSI: {current_rsi:.2f})'
                         trade_count += 1
                 
                 # Add debug info for this row
