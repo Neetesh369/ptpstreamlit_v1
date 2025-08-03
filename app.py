@@ -590,6 +590,23 @@ def backtest_page():
         # Calculate RSI of Ratio
         comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
         
+        # Display calculation table first
+        st.header("📊 Calculation Table")
+        
+        # Create calculation table with all required columns
+        calc_table = comparison_df[['Date', stock1, stock2, 'Ratio', 'Z-Score', 'RSI']].copy()
+        calc_table.columns = ['Date', f'{stock1} Price', f'{stock2} Price', 'Ratio', 'Z-Score', 'RSI']
+        
+        # Format the table for better display
+        calc_table['Ratio'] = calc_table['Ratio'].round(4)
+        calc_table['Z-Score'] = calc_table['Z-Score'].round(2)
+        calc_table['RSI'] = calc_table['RSI'].round(2)
+        calc_table[f'{stock1} Price'] = calc_table[f'{stock1} Price'].round(2)
+        calc_table[f'{stock2} Price'] = calc_table[f'{stock2} Price'].round(2)
+        
+        # Display as scrollable table
+        st.dataframe(calc_table, use_container_width=True, height=400)
+        
         # First perform correlation and cointegration analysis
         st.header("Pair Statistics")
         
@@ -723,348 +740,289 @@ def backtest_page():
             ratio_stats_df = pd.DataFrame(ratio_stats)
             st.dataframe(ratio_stats_df, hide_index=True)
             
-        except Exception as e:
-            st.error(f"Error in correlation/cointegration analysis: {e}")
-        
-        # Cointegration filter for trading
-        st.header("Cointegration Filter")
-        use_cointegration_filter = st.checkbox("Enable Cointegration Filter", value=True, 
-                                             help="Only trade when pair is cointegrated according to Johansen test")
-        
-        if use_cointegration_filter and johansen_result['Error'] is None:
-            if not johansen_result['Is Cointegrated']:
-                st.warning("⚠️ Pair is not cointegrated. Trading is disabled.")
-                return
-            else:
-                st.success("✅ Pair is cointegrated. Trading enabled.")
-        elif use_cointegration_filter and johansen_result['Error'] is not None:
-            st.warning("⚠️ Could not determine cointegration status. Trading disabled.")
-            return
-        else:
-            st.info("ℹ️ Cointegration filter disabled. Trading will proceed regardless of cointegration status.")
-        
-        # Calculate trade results
-        trades = []
-        in_long_trade = False
-        in_short_trade = False
-        long_entry_price = None
-        long_entry_date = None
-        long_entry_index = None
-        short_entry_price = None
-        short_entry_date = None
-        short_entry_index = None
-        
-        # Debug information
-        debug_info = []
+            # Calculate trade results
+            trades = []
+            in_long_trade = False
+            in_short_trade = False
+            long_entry_price = None
+            long_entry_date = None
+            long_entry_index = None
+            short_entry_price = None
+            short_entry_date = None
+            short_entry_index = None
+            
+            # Debug information
+            debug_info = []
 
-        for index, row in comparison_df.iterrows():
-            current_date = row['Date']
-            current_zscore = row['Z-Score']
-            current_rsi = row['RSI']
-            current_ratio = row['Ratio']
+            for index, row in comparison_df.iterrows():
+                current_date = row['Date']
+                current_zscore = row['Z-Score']
+                current_rsi = row['RSI']
+                current_ratio = row['Ratio']
+                
+                # Debug data for this row
+                row_debug = {
+                    'Date': current_date,
+                    'Z-Score': current_zscore,
+                    'RSI': current_rsi,
+                    'Ratio': current_ratio,
+                    'Action': 'None'
+                }
+                
+                # Check for long trade exit conditions if in a long trade
+                if in_long_trade:
+                    days_in_trade = (current_date - long_entry_date).days
+                    current_profit_pct = ((current_ratio - long_entry_price) / long_entry_price) * 100
+                    
+                    # Check all exit conditions
+                    zscore_exit = current_zscore <= long_exit_zscore
+                    rsi_exit = use_rsi_for_exit and current_rsi >= long_exit_rsi
+                    time_exit = days_in_trade >= max_days_in_trade
+                    target_exit = current_profit_pct >= target_profit_pct
+                    stop_exit = current_profit_pct <= -stop_loss_pct
+                    
+                    # Determine exit reason with priority
+                    exit_reason = None
+                    if target_exit:
+                        exit_reason = "Target"
+                    elif stop_exit:
+                        exit_reason = "Stop Loss"
+                    elif time_exit:
+                        exit_reason = "Time"
+                    elif zscore_exit:
+                        exit_reason = "Z-Score"
+                    elif rsi_exit:
+                        exit_reason = "RSI"
+                    
+                    if exit_reason:
+                        # Exit long trade
+                        exit_price = current_ratio
+                        exit_date = current_date
+                        profit = exit_price - long_entry_price
+                        profit_pct = (profit / long_entry_price) * 100
+                        
+                        trades.append({
+                            'Entry Date': long_entry_date,
+                            'Exit Date': exit_date,
+                            'Days in Trade': days_in_trade,
+                            'Entry Price': long_entry_price,
+                            'Exit Price': exit_price,
+                            'Profit': profit,
+                            'Profit %': profit_pct,
+                            'Type': 'Long',
+                            'Exit Reason': exit_reason
+                        })
+                        
+                        row_debug['Action'] = f'Exit Long: {exit_reason}'
+                        
+                        in_long_trade = False
+                        long_entry_price = None
+                        long_entry_date = None
+                        long_entry_index = None
+                
+                # Check for short trade exit conditions if in a short trade
+                elif in_short_trade:
+                    days_in_trade = (current_date - short_entry_date).days
+                    current_profit_pct = ((short_entry_price - current_ratio) / short_entry_price) * 100
+                    
+                    # Check all exit conditions
+                    zscore_exit = current_zscore <= short_exit_zscore  # For short trades, exit when Z-Score falls below exit threshold
+                    rsi_exit = use_rsi_for_exit and current_rsi <= short_exit_rsi
+                    time_exit = days_in_trade >= max_days_in_trade
+                    target_exit = current_profit_pct >= target_profit_pct
+                    stop_exit = current_profit_pct <= -stop_loss_pct
+                    
+                    # Determine exit reason with priority
+                    exit_reason = None
+                    if target_exit:
+                        exit_reason = "Target"
+                    elif stop_exit:
+                        exit_reason = "Stop Loss"
+                    elif time_exit:
+                        exit_reason = "Time"
+                    elif zscore_exit:
+                        exit_reason = "Z-Score"
+                    elif rsi_exit:
+                        exit_reason = "RSI"
+                    
+                    if exit_reason:
+                        # Exit short trade
+                        exit_price = current_ratio
+                        exit_date = current_date
+                        profit = short_entry_price - exit_price  # Profit calculation for short trades
+                        profit_pct = (profit / short_entry_price) * 100
+                        
+                        trades.append({
+                            'Entry Date': short_entry_date,
+                            'Exit Date': exit_date,
+                            'Days in Trade': days_in_trade,
+                            'Entry Price': short_entry_price,
+                            'Exit Price': exit_price,
+                            'Profit': profit,
+                            'Profit %': profit_pct,
+                            'Type': 'Short',
+                            'Exit Reason': exit_reason
+                        })
+                        
+                        row_debug['Action'] = f'Exit Short: {exit_reason}'
+                        
+                        in_short_trade = False
+                        short_entry_price = None
+                        short_entry_date = None
+                        short_entry_index = None
+                
+                # Check for new trade entries (only if not already in a trade)
+                elif not in_long_trade and not in_short_trade:
+                    # Check long trade entry conditions
+                    long_zscore_condition = current_zscore <= long_entry_zscore
+                    long_rsi_condition = not use_rsi_for_entry or current_rsi <= long_entry_rsi
+                    
+                    # Check short trade entry conditions
+                    short_zscore_condition = current_zscore >= short_entry_zscore
+                    short_rsi_condition = not use_rsi_for_entry or current_rsi >= short_entry_rsi
+                    
+                    # Enter long trade if conditions are met
+                    if long_zscore_condition and long_rsi_condition:
+                        in_long_trade = True
+                        long_entry_price = current_ratio
+                        long_entry_date = current_date
+                        long_entry_index = index
+                        row_debug['Action'] = 'Enter Long'
+                    
+                    # Enter short trade if conditions are met
+                    elif short_zscore_condition and short_rsi_condition:
+                        in_short_trade = True
+                        short_entry_price = current_ratio
+                        short_entry_date = current_date
+                        short_entry_index = index
+                        row_debug['Action'] = 'Enter Short'
+                
+                # Add debug info for this row
+                debug_info.append(row_debug)
             
-            # Debug data for this row
-            row_debug = {
-                'Date': current_date,
-                'Z-Score': current_zscore,
-                'RSI': current_rsi,
-                'Ratio': current_ratio,
-                'Action': 'None'
-            }
-            
-            # Check for long trade exit conditions if in a long trade
+            # Close any open trades at the end of the data
             if in_long_trade:
-                days_in_trade = (current_date - long_entry_date).days
-                current_profit_pct = ((current_ratio - long_entry_price) / long_entry_price) * 100
+                last_row = comparison_df.iloc[-1]
+                days_in_trade = (last_row['Date'] - long_entry_date).days
+                exit_price = last_row['Ratio']
+                profit = exit_price - long_entry_price
+                profit_pct = (profit / long_entry_price) * 100
                 
-                # Check all exit conditions
-                zscore_exit = current_zscore <= long_exit_zscore
-                rsi_exit = use_rsi_for_exit and current_rsi >= long_exit_rsi
-                time_exit = days_in_trade >= max_days_in_trade
-                target_exit = current_profit_pct >= target_profit_pct
-                stop_exit = current_profit_pct <= -stop_loss_pct
-                
-                # Determine exit reason with priority
-                exit_reason = None
-                if target_exit:
-                    exit_reason = "Target"
-                elif stop_exit:
-                    exit_reason = "Stop Loss"
-                elif time_exit:
-                    exit_reason = "Time"
-                elif zscore_exit:
-                    exit_reason = "Z-Score"
-                elif rsi_exit:
-                    exit_reason = "RSI"
-                
-                if exit_reason:
-                    # Exit long trade
-                    exit_price = current_ratio
-                    exit_date = current_date
-                    profit = exit_price - long_entry_price
-                    profit_pct = (profit / long_entry_price) * 100
-                    
-                    trades.append({
-                        'Entry Date': long_entry_date,
-                        'Exit Date': exit_date,
-                        'Days in Trade': days_in_trade,
-                        'Entry Price': long_entry_price,
-                        'Exit Price': exit_price,
-                        'Profit': profit,
-                        'Profit %': profit_pct,
-                        'Type': 'Long',
-                        'Exit Reason': exit_reason
-                    })
-                    
-                    row_debug['Action'] = f'Exit Long: {exit_reason}'
-                    
-                    in_long_trade = False
-                    long_entry_price = None
-                    long_entry_date = None
-                    long_entry_index = None
+                trades.append({
+                    'Entry Date': long_entry_date,
+                    'Exit Date': last_row['Date'],
+                    'Days in Trade': days_in_trade,
+                    'Entry Price': long_entry_price,
+                    'Exit Price': exit_price,
+                    'Profit': profit,
+                    'Profit %': profit_pct,
+                    'Type': 'Long',
+                    'Exit Reason': 'End of Data'
+                })
             
-            # Check for short trade exit conditions if in a short trade
-            elif in_short_trade:
-                days_in_trade = (current_date - short_entry_date).days
-                current_profit_pct = ((short_entry_price - current_ratio) / short_entry_price) * 100
+            if in_short_trade:
+                last_row = comparison_df.iloc[-1]
+                days_in_trade = (last_row['Date'] - short_entry_date).days
+                exit_price = last_row['Ratio']
+                profit = short_entry_price - exit_price
+                profit_pct = (profit / short_entry_price) * 100
                 
-                # Check all exit conditions
-                zscore_exit = current_zscore <= short_exit_zscore  # For short trades, exit when Z-Score falls below exit threshold
-                rsi_exit = use_rsi_for_exit and current_rsi <= short_exit_rsi
-                time_exit = days_in_trade >= max_days_in_trade
-                target_exit = current_profit_pct >= target_profit_pct
-                stop_exit = current_profit_pct <= -stop_loss_pct
-                
-                # Determine exit reason with priority
-                exit_reason = None
-                if target_exit:
-                    exit_reason = "Target"
-                elif stop_exit:
-                    exit_reason = "Stop Loss"
-                elif time_exit:
-                    exit_reason = "Time"
-                elif zscore_exit:
-                    exit_reason = "Z-Score"
-                elif rsi_exit:
-                    exit_reason = "RSI"
-                
-                if exit_reason:
-                    # Exit short trade
-                    exit_price = current_ratio
-                    exit_date = current_date
-                    profit = short_entry_price - exit_price  # Profit calculation for short trades
-                    profit_pct = (profit / short_entry_price) * 100
-                    
-                    trades.append({
-                        'Entry Date': short_entry_date,
-                        'Exit Date': exit_date,
-                        'Days in Trade': days_in_trade,
-                        'Entry Price': short_entry_price,
-                        'Exit Price': exit_price,
-                        'Profit': profit,
-                        'Profit %': profit_pct,
-                        'Type': 'Short',
-                        'Exit Reason': exit_reason
-                    })
-                    
-                    row_debug['Action'] = f'Exit Short: {exit_reason}'
-                    
-                    in_short_trade = False
-                    short_entry_price = None
-                    short_entry_date = None
-                    short_entry_index = None
+                trades.append({
+                    'Entry Date': short_entry_date,
+                    'Exit Date': last_row['Date'],
+                    'Days in Trade': days_in_trade,
+                    'Entry Price': short_entry_price,
+                    'Exit Price': exit_price,
+                    'Profit': profit,
+                    'Profit %': profit_pct,
+                    'Type': 'Short',
+                    'Exit Reason': 'End of Data'
+                })
             
-            # Check for new trade entries (only if not already in a trade)
-            elif not in_long_trade and not in_short_trade:
-                # Dynamic cointegration check for this day
-                daily_cointegrated = True
-                if use_cointegration_filter:
-                    # Get data up to current date for cointegration test
-                    current_data = comparison_df[comparison_df['Date'] <= current_date]
-                    if len(current_data) >= 30:  # Need sufficient data for test
-                        daily_johansen = test_johansen_cointegration(
-                            current_data[stock1], 
-                            current_data[stock2]
-                        )
-                        daily_cointegrated = daily_johansen['Is Cointegrated'] if daily_johansen['Error'] is None else False
-                    else:
-                        daily_cointegrated = False
+            # Display trade results
+            if trades:
+                trades_df = pd.DataFrame(trades)
+                st.header("Trade Results")
+                st.dataframe(trades_df, hide_index=True)
                 
-                # Check long trade entry conditions
-                long_zscore_condition = current_zscore <= long_entry_zscore
-                long_rsi_condition = not use_rsi_for_entry or current_rsi <= long_entry_rsi
+                # Create a debug dataframe
+                debug_df = pd.DataFrame(debug_info)
                 
-                # Check short trade entry conditions
-                short_zscore_condition = current_zscore >= short_entry_zscore
-                short_rsi_condition = not use_rsi_for_entry or current_rsi >= short_entry_rsi
+                # Show debug information (only rows with actions)
+                st.header("Trade Actions Log")
+                action_debug_df = debug_df[debug_df['Action'] != 'None']
+                st.dataframe(action_debug_df, hide_index=True)
                 
-                # Enter long trade if conditions are met and pair is cointegrated
-                if long_zscore_condition and long_rsi_condition and daily_cointegrated:
-                    in_long_trade = True
-                    long_entry_price = current_ratio
-                    long_entry_date = current_date
-                    long_entry_index = index
-                    row_debug['Action'] = 'Enter Long'
-                elif long_zscore_condition and long_rsi_condition and not daily_cointegrated:
-                    row_debug['Action'] = 'Long Signal (Not Cointegrated)'
+                # Analyze cointegration filter results
+                # Removed cointegration filter analysis
                 
-                # Enter short trade if conditions are met and pair is cointegrated
-                elif short_zscore_condition and short_rsi_condition and daily_cointegrated:
-                    in_short_trade = True
-                    short_entry_price = current_ratio
-                    short_entry_date = current_date
-                    short_entry_index = index
-                    row_debug['Action'] = 'Enter Short'
-                elif short_zscore_condition and short_rsi_condition and not daily_cointegrated:
-                    row_debug['Action'] = 'Short Signal (Not Cointegrated)'
-            
-            # Add debug info for this row
-            debug_info.append(row_debug)
-        
-        # Close any open trades at the end of the data
-        if in_long_trade:
-            last_row = comparison_df.iloc[-1]
-            days_in_trade = (last_row['Date'] - long_entry_date).days
-            exit_price = last_row['Ratio']
-            profit = exit_price - long_entry_price
-            profit_pct = (profit / long_entry_price) * 100
-            
-            trades.append({
-                'Entry Date': long_entry_date,
-                'Exit Date': last_row['Date'],
-                'Days in Trade': days_in_trade,
-                'Entry Price': long_entry_price,
-                'Exit Price': exit_price,
-                'Profit': profit,
-                'Profit %': profit_pct,
-                'Type': 'Long',
-                'Exit Reason': 'End of Data'
-            })
-        
-        if in_short_trade:
-            last_row = comparison_df.iloc[-1]
-            days_in_trade = (last_row['Date'] - short_entry_date).days
-            exit_price = last_row['Ratio']
-            profit = short_entry_price - exit_price
-            profit_pct = (profit / short_entry_price) * 100
-            
-            trades.append({
-                'Entry Date': short_entry_date,
-                'Exit Date': last_row['Date'],
-                'Days in Trade': days_in_trade,
-                'Entry Price': short_entry_price,
-                'Exit Price': exit_price,
-                'Profit': profit,
-                'Profit %': profit_pct,
-                'Type': 'Short',
-                'Exit Reason': 'End of Data'
-            })
-        
-        # Display trade results
-        if trades:
-            trades_df = pd.DataFrame(trades)
-            st.header("Trade Results")
-            st.dataframe(trades_df, hide_index=True)
-            
-            # Create a debug dataframe
-            debug_df = pd.DataFrame(debug_info)
-            
-            # Show debug information (only rows with actions)
-            st.header("Trade Actions Log")
-            action_debug_df = debug_df[debug_df['Action'] != 'None']
-            st.dataframe(action_debug_df, hide_index=True)
-            
-            # Analyze cointegration filter results
-            if use_cointegration_filter:
-                st.header("Cointegration Filter Analysis")
+                # Calculate trade summary metrics
+                total_trades = len(trades_df)
+                winning_trades = trades_df[trades_df['Profit'] > 0]
+                losing_trades = trades_df[trades_df['Profit'] <= 0]
+                win_rate = (len(winning_trades) / total_trades) * 100
+                lose_rate = (len(losing_trades) / total_trades) * 100
                 
-                # Count different types of signals
-                total_signals = len(action_debug_df[action_debug_df['Action'].str.contains('Signal', na=False)])
-                cointegrated_signals = len(action_debug_df[action_debug_df['Action'].str.contains('Enter', na=False)])
-                non_cointegrated_signals = len(action_debug_df[action_debug_df['Action'].str.contains('Not Cointegrated', na=False)])
+                long_trades = trades_df[trades_df['Type'] == 'Long']
+                total_long_trades = len(long_trades)
+                long_winning_trades = long_trades[long_trades['Profit'] > 0]
+                long_win_rate = (len(long_winning_trades) / total_long_trades) * 100 if total_long_trades > 0 else 0
+                long_lose_rate = 100 - long_win_rate
                 
-                filter_summary = {
-                    'Metric': ['Total Trading Signals', 'Cointegrated Signals', 'Non-Cointegrated Signals', 'Signal Filter Rate (%)'],
+                short_trades = trades_df[trades_df['Type'] == 'Short']
+                total_short_trades = len(short_trades)
+                short_winning_trades = short_trades[short_trades['Profit'] > 0]
+                short_win_rate = (len(short_winning_trades) / total_short_trades) * 100 if total_short_trades > 0 else 0
+                short_lose_rate = 100 - short_win_rate
+                
+                max_drawdown = trades_df['Profit'].cumsum().min()
+                total_profit = trades_df['Profit'].sum()
+                total_loss = abs(trades_df[trades_df['Profit'] <= 0]['Profit'].sum())
+                profit_factor = total_profit / total_loss if total_loss > 0 else 0
+                
+                # Calculate average profit percentage and average days in trade
+                avg_profit_pct = trades_df['Profit %'].mean()
+                avg_days_in_trade = trades_df['Days in Trade'].mean()
+                
+                # Count exit reasons
+                exit_reasons = trades_df['Exit Reason'].value_counts()
+                
+                # Display trade summary
+                st.header("Trade Summary")
+                summary_data = {
+                    'Metric': [
+                        'Total Trades', 'Win Rate (%)', 'Lose Rate (%)',
+                        'Total Long Trades', 'Long Win Rate (%)', 'Long Lose Rate (%)',
+                        'Total Short Trades', 'Short Win Rate (%)', 'Short Lose Rate (%)',
+                        'Max Drawdown ($)', 'Profit Factor', 'Avg Profit (%)', 'Avg Days in Trade'
+                    ],
                     'Value': [
-                        total_signals,
-                        cointegrated_signals,
-                        non_cointegrated_signals,
-                        f"{(non_cointegrated_signals / total_signals * 100):.1f}" if total_signals > 0 else "0.0"
+                        total_trades, f"{win_rate:.2f}", f"{lose_rate:.2f}",
+                        total_long_trades, f"{long_win_rate:.2f}", f"{long_lose_rate:.2f}",
+                        total_short_trades, f"{short_win_rate:.2f}", f"{short_lose_rate:.2f}",
+                        f"{max_drawdown:.2f}", f"{profit_factor:.2f}", f"{avg_profit_pct:.2f}", f"{avg_days_in_trade:.2f}"
                     ]
                 }
-                filter_summary_df = pd.DataFrame(filter_summary)
-                st.dataframe(filter_summary_df, hide_index=True)
+                summary_df = pd.DataFrame(summary_data)
+                st.dataframe(summary_df, hide_index=True)
                 
-                if non_cointegrated_signals > 0:
-                    st.info(f"ℹ️ {non_cointegrated_signals} trading signals were filtered out due to lack of cointegration.")
-            
-            # Calculate trade summary metrics
-            total_trades = len(trades_df)
-            winning_trades = trades_df[trades_df['Profit'] > 0]
-            losing_trades = trades_df[trades_df['Profit'] <= 0]
-            win_rate = (len(winning_trades) / total_trades) * 100
-            lose_rate = (len(losing_trades) / total_trades) * 100
-            
-            long_trades = trades_df[trades_df['Type'] == 'Long']
-            total_long_trades = len(long_trades)
-            long_winning_trades = long_trades[long_trades['Profit'] > 0]
-            long_win_rate = (len(long_winning_trades) / total_long_trades) * 100 if total_long_trades > 0 else 0
-            long_lose_rate = 100 - long_win_rate
-            
-            short_trades = trades_df[trades_df['Type'] == 'Short']
-            total_short_trades = len(short_trades)
-            short_winning_trades = short_trades[short_trades['Profit'] > 0]
-            short_win_rate = (len(short_winning_trades) / total_short_trades) * 100 if total_short_trades > 0 else 0
-            short_lose_rate = 100 - short_win_rate
-            
-            max_drawdown = trades_df['Profit'].cumsum().min()
-            total_profit = trades_df['Profit'].sum()
-            total_loss = abs(trades_df[trades_df['Profit'] <= 0]['Profit'].sum())
-            profit_factor = total_profit / total_loss if total_loss > 0 else 0
-            
-            # Calculate average profit percentage and average days in trade
-            avg_profit_pct = trades_df['Profit %'].mean()
-            avg_days_in_trade = trades_df['Days in Trade'].mean()
-            
-            # Count exit reasons
-            exit_reasons = trades_df['Exit Reason'].value_counts()
-            
-            # Display trade summary
-            st.header("Trade Summary")
-            summary_data = {
-                'Metric': [
-                    'Total Trades', 'Win Rate (%)', 'Lose Rate (%)',
-                    'Total Long Trades', 'Long Win Rate (%)', 'Long Lose Rate (%)',
-                    'Total Short Trades', 'Short Win Rate (%)', 'Short Lose Rate (%)',
-                    'Max Drawdown ($)', 'Profit Factor', 'Avg Profit (%)', 'Avg Days in Trade'
-                ],
-                'Value': [
-                    total_trades, f"{win_rate:.2f}", f"{lose_rate:.2f}",
-                    total_long_trades, f"{long_win_rate:.2f}", f"{long_lose_rate:.2f}",
-                    total_short_trades, f"{short_win_rate:.2f}", f"{short_lose_rate:.2f}",
-                    f"{max_drawdown:.2f}", f"{profit_factor:.2f}", f"{avg_profit_pct:.2f}", f"{avg_days_in_trade:.2f}"
-                ]
-            }
-            summary_df = pd.DataFrame(summary_data)
-            st.dataframe(summary_df, hide_index=True)
-            
-            # Display exit reason statistics
-            st.subheader("Exit Reasons")
-            exit_reasons_df = pd.DataFrame({
-                'Exit Reason': exit_reasons.index,
-                'Count': exit_reasons.values
-            })
-            st.dataframe(exit_reasons_df, hide_index=True)
-            
-            # Display total profit
-            st.success(f"Total Profit: {total_profit:.2f}")
-            
-            # Calculate and plot Equity Curve
-            trades_df['Cumulative Profit'] = trades_df['Profit'].cumsum()
-            st.header("Equity Curve")
-            st.line_chart(trades_df.set_index('Exit Date')['Cumulative Profit'])
-        else:
-            st.warning("No trades executed based on the provided parameters.")
+                # Display exit reason statistics
+                st.subheader("Exit Reasons")
+                exit_reasons_df = pd.DataFrame({
+                    'Exit Reason': exit_reasons.index,
+                    'Count': exit_reasons.values
+                })
+                st.dataframe(exit_reasons_df, hide_index=True)
+                
+                # Display total profit
+                st.success(f"Total Profit: {total_profit:.2f}")
+                
+                # Calculate and plot Equity Curve
+                trades_df['Cumulative Profit'] = trades_df['Profit'].cumsum()
+                st.header("Equity Curve")
+                st.line_chart(trades_df.set_index('Exit Date')['Cumulative Profit'])
+            else:
+                st.warning("No trades executed based on the provided parameters.")
 
 def main():
     st.sidebar.title("Navigation")
