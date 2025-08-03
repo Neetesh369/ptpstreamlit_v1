@@ -740,6 +740,9 @@ def backtest_page():
             ratio_stats_df = pd.DataFrame(ratio_stats)
             st.dataframe(ratio_stats_df, hide_index=True)
             
+        except Exception as e:
+            st.error(f"Error in correlation/cointegration analysis: {e}")
+            
             # Calculate trade results
             trades = []
             in_long_trade = False
