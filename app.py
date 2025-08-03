@@ -706,24 +706,6 @@ def backtest_page():
             # Add a visual separator
             st.markdown("---")
             
-            # Add ratio analysis visualizations
-            st.header("Ratio Analysis")
-            
-            # Create charts for ratio analysis
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("Price Ratio Over Time")
-                st.line_chart(comparison_df.set_index('Date')['Ratio'])
-            
-            with col2:
-                st.subheader("Z-Score Over Time")
-                st.line_chart(comparison_df.set_index('Date')['Z-Score'])
-            
-            # RSI chart
-            st.subheader("RSI Over Time")
-            st.line_chart(comparison_df.set_index('Date')['RSI'])
-            
             # Add statistical summary
             st.subheader("Ratio Statistics")
             ratio_stats = {
