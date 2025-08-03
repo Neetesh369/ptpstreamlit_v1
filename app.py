@@ -498,6 +498,20 @@ def backtest_page():
     st.header("Statistical Analysis Parameters")
     # Note: All statistical tests now use the entire dataset
     
+    # Add date range selection for backtesting
+    st.header("Date Range Selection")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        analysis_start_date = st.date_input("Analysis Start Date", 
+                                          value=comparison_df['Date'].min() if not comparison_df.empty else None,
+                                          help="Start date for statistical analysis and backtesting")
+    
+    with col2:
+        analysis_end_date = st.date_input("Analysis End Date", 
+                                        value=comparison_df['Date'].max() if not comparison_df.empty else None,
+                                        help="End date for statistical analysis and backtesting")
+    
     # Add input boxes for Z-Score lookback and RSI period
     st.header("Trading Parameters")
     col1, col2 = st.columns(2)
@@ -587,11 +601,27 @@ def backtest_page():
         # Calculate RSI of Ratio
         comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
         
+        # Filter data for calculation table and trading based on selected date range
+        if analysis_start_date and analysis_end_date:
+            # Convert date inputs to datetime
+            start_dt = pd.to_datetime(analysis_start_date)
+            end_dt = pd.to_datetime(analysis_end_date)
+            
+            # Filter the dataframe for trading
+            trading_df = comparison_df[(comparison_df['Date'] >= start_dt) & (comparison_df['Date'] <= end_dt)]
+            
+            if len(trading_df) == 0:
+                st.error("No data available for the selected date range. Please adjust the dates.")
+                return
+        else:
+            # Use the entire dataset if no date range is selected
+            trading_df = comparison_df
+        
         # Display calculation table first
         st.header("📊 Calculation Table")
         
         # Create calculation table with all required columns
-        calc_table = comparison_df[['Date', stock1, stock2, 'Ratio', 'Z-Score', 'RSI']].copy()
+        calc_table = trading_df[['Date', stock1, stock2, 'Ratio', 'Z-Score', 'RSI']].copy()
         calc_table.columns = ['Date', f'{stock1} Price', f'{stock2} Price', 'Ratio', 'Z-Score', 'RSI']
         
         # Format the table for better display
@@ -615,27 +645,43 @@ def backtest_page():
             # Sort by Date (oldest first)
             comparison_df = comparison_df.sort_values(by='Date', ascending=True)
             
-            # Use the entire dataset for correlation and cointegration analysis
-            stat_df = comparison_df
+            # Filter data based on selected date range
+            if analysis_start_date and analysis_end_date:
+                # Convert date inputs to datetime
+                start_dt = pd.to_datetime(analysis_start_date)
+                end_dt = pd.to_datetime(analysis_end_date)
+                
+                # Filter the dataframe
+                stat_df = comparison_df[(comparison_df['Date'] >= start_dt) & (comparison_df['Date'] <= end_dt)]
+                
+                if len(stat_df) == 0:
+                    st.error("No data available for the selected date range. Please adjust the dates.")
+                    return
+                    
+                st.info(f"📅 Using data from {start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')} ({len(stat_df)} days)")
+            else:
+                # Use the entire dataset if no date range is selected
+                stat_df = comparison_df
+                st.info(f"📅 Using entire dataset ({len(stat_df)} days)")
             
-            # Calculate correlation using entire dataset
+            # Calculate correlation using selected date range
             correlation = stat_df[stock1].corr(stat_df[stock2])
             
-            # Run Engle-Granger cointegration test using entire dataset
+            # Run Engle-Granger cointegration test using selected date range
             coint_result, spread, model = test_cointegration(stat_df[stock1], stat_df[stock2])
             
-            # Run Johansen cointegration test using entire dataset
+            # Run Johansen cointegration test using selected date range
             johansen_result = test_johansen_cointegration(stat_df[stock1], stat_df[stock2])
             
-            # Calculate Hurst exponent for the ratio using entire dataset
-            hurst_exponent = calculate_hurst_exponent(comparison_df['Ratio'])
+            # Calculate Hurst exponent for the ratio using selected date range
+            hurst_exponent = calculate_hurst_exponent(stat_df['Ratio'])
             
             # Display results in three columns
             col1, col2, col3 = st.columns(3)
             
             with col1:
                 st.subheader("Correlation Analysis")
-                st.write(f"**Dataset Period:** {len(stat_df)} days")
+                st.write(f"**Analysis Period:** {len(stat_df)} days")
                 st.write(f"**Pearson Correlation:** {correlation:.4f}")
                 
                 # Interpret correlation
@@ -655,7 +701,7 @@ def backtest_page():
             
             with col2:
                 st.subheader("Engle-Granger Cointegration")
-                st.write(f"**Dataset Period:** {len(stat_df)} days")
+                st.write(f"**Analysis Period:** {len(stat_df)} days")
                 st.write(f"**ADF Test Statistic:** {coint_result['ADF Statistic']:.4f}")
                 st.write(f"**p-value:** {coint_result['p-value']:.4f}")
                 
@@ -667,7 +713,7 @@ def backtest_page():
             
             with col3:
                 st.subheader("Johansen Cointegration")
-                st.write(f"**Dataset Period:** {len(stat_df)} days")
+                st.write(f"**Analysis Period:** {len(stat_df)} days")
                 if johansen_result['Error'] is None:
                     st.write(f"**Trace Statistic:** {johansen_result['Trace Statistic']:.4f}")
                     st.write(f"**Critical Value:** {johansen_result['Critical Value']:.4f}")
@@ -732,7 +778,7 @@ def backtest_page():
             # Debug information
             debug_info = []
 
-            for index, row in comparison_df.iterrows():
+            for index, row in trading_df.iterrows():
                 current_date = row['Date']
                 current_zscore = row['Z-Score']
                 current_rsi = row['RSI']
@@ -880,7 +926,7 @@ def backtest_page():
             
             # Close any open trades at the end of the data
             if in_long_trade:
-                last_row = comparison_df.iloc[-1]
+                last_row = trading_df.iloc[-1]
                 days_in_trade = (last_row['Date'] - long_entry_date).days
                 exit_price = last_row['Ratio']
                 profit = exit_price - long_entry_price
@@ -899,7 +945,7 @@ def backtest_page():
                 })
             
             if in_short_trade:
-                last_row = comparison_df.iloc[-1]
+                last_row = trading_df.iloc[-1]
                 days_in_trade = (last_row['Date'] - short_entry_date).days
                 exit_price = last_row['Ratio']
                 profit = short_entry_price - exit_price
