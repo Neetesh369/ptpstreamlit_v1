@@ -848,11 +848,15 @@ def backtest_page():
                         current_profit_pct = ((current_ratio - entry_price) / entry_price) * 100
                         
                         # Check exit conditions for long trade
-                        zscore_exit = current_zscore >= long_exit_zscore  # Crossover above exit threshold
+                        zscore_exit = current_zscore >= long_exit_zscore  # Exit when Z-score goes above exit threshold
                         rsi_exit = use_rsi_for_exit and current_rsi >= long_exit_rsi
                         time_exit = days_in_trade >= max_days_in_trade
                         target_exit = current_profit_pct >= target_profit_pct
                         stop_exit = current_profit_pct <= -stop_loss_pct
+                        
+                        # Debug exit conditions
+                        st.info(f"🔍 Long Trade Debug - Z-Score: {current_zscore:.2f} (Exit at: {long_exit_zscore}), RSI: {current_rsi:.2f} (Exit at: {long_exit_rsi}), Profit: {current_profit_pct:.2f}%, Days: {days_in_trade}")
+                        st.info(f"🔍 Exit Conditions - Z-Score: {zscore_exit}, RSI: {rsi_exit}, Time: {time_exit}, Target: {target_exit}, Stop: {stop_exit}")
                         
                         # Determine exit reason with priority
                         exit_reason = None
@@ -899,11 +903,15 @@ def backtest_page():
                         current_profit_pct = ((entry_price - current_ratio) / entry_price) * 100
                         
                         # Check exit conditions for short trade
-                        zscore_exit = current_zscore <= short_exit_zscore  # Crossover below exit threshold
+                        zscore_exit = current_zscore <= short_exit_zscore  # Exit when Z-score goes below exit threshold
                         rsi_exit = use_rsi_for_exit and current_rsi <= short_exit_rsi
                         time_exit = days_in_trade >= max_days_in_trade
                         target_exit = current_profit_pct >= target_profit_pct
                         stop_exit = current_profit_pct <= -stop_loss_pct
+                        
+                        # Debug exit conditions
+                        st.info(f"🔍 Short Trade Debug - Z-Score: {current_zscore:.2f} (Exit at: {short_exit_zscore}), RSI: {current_rsi:.2f} (Exit at: {short_exit_rsi}), Profit: {current_profit_pct:.2f}%, Days: {days_in_trade}")
+                        st.info(f"🔍 Exit Conditions - Z-Score: {zscore_exit}, RSI: {rsi_exit}, Time: {time_exit}, Target: {target_exit}, Stop: {stop_exit}")
                         
                         # Determine exit reason with priority
                         exit_reason = None
