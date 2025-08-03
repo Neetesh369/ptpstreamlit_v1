@@ -634,6 +634,31 @@ def backtest_page():
         # Display as scrollable table
         st.dataframe(calc_table, use_container_width=True, height=400)
         
+        # Add debugging information
+        st.header("🔍 Trading Parameters Debug")
+        debug_params = {
+            'Parameter': [
+                'Long Entry Z-Score', 'Long Exit Z-Score', 'Short Entry Z-Score', 'Short Exit Z-Score',
+                'Long Entry RSI', 'Long Exit RSI', 'Short Entry RSI', 'Short Exit RSI',
+                'Use RSI for Entry', 'Use RSI for Exit', 'Max Days in Trade', 'Target Profit %', 'Stop Loss %',
+                'Data Points Available', 'Date Range'
+            ],
+            'Value': [
+                long_entry_zscore, long_exit_zscore, short_entry_zscore, short_exit_zscore,
+                long_entry_rsi, long_exit_rsi, short_entry_rsi, short_exit_rsi,
+                use_rsi_for_entry, use_rsi_for_exit, max_days_in_trade, target_profit_pct, stop_loss_pct,
+                len(trading_df), f"{trading_df['Date'].min().strftime('%Y-%m-%d')} to {trading_df['Date'].max().strftime('%Y-%m-%d')}"
+            ]
+        }
+        debug_params_df = pd.DataFrame(debug_params)
+        st.dataframe(debug_params_df, hide_index=True)
+        
+        # Check for potential trade signals
+        potential_long_signals = len(trading_df[trading_df['Z-Score'] <= long_entry_zscore])
+        potential_short_signals = len(trading_df[trading_df['Z-Score'] >= short_entry_zscore])
+        
+        st.info(f"📊 Potential Signals: {potential_long_signals} long signals, {potential_short_signals} short signals")
+        
         # First perform correlation and cointegration analysis
         st.header("Pair Statistics")
         
@@ -777,6 +802,7 @@ def backtest_page():
             
             # Debug information
             debug_info = []
+            trade_count = 0
 
             for index, row in trading_df.iterrows():
                 current_date = row['Date']
@@ -912,6 +938,7 @@ def backtest_page():
                         long_entry_date = current_date
                         long_entry_index = index
                         row_debug['Action'] = 'Enter Long'
+                        trade_count += 1
                     
                     # Enter short trade if conditions are met
                     elif short_zscore_condition and short_rsi_condition:
@@ -920,6 +947,7 @@ def backtest_page():
                         short_entry_date = current_date
                         short_entry_index = index
                         row_debug['Action'] = 'Enter Short'
+                        trade_count += 1
                 
                 # Add debug info for this row
                 debug_info.append(row_debug)
@@ -1047,6 +1075,17 @@ def backtest_page():
                 st.line_chart(trades_df.set_index('Exit Date')['Cumulative Profit'])
             else:
                 st.warning("No trades executed based on the provided parameters.")
+                st.info(f"🔍 Debug Info: {trade_count} trade entries detected, but no completed trades.")
+                
+                # Show some debugging info about why no trades
+                if len(trading_df) > 0:
+                    zscore_range = f"Z-Score range: {trading_df['Z-Score'].min():.2f} to {trading_df['Z-Score'].max():.2f}"
+                    rsi_range = f"RSI range: {trading_df['RSI'].min():.2f} to {trading_df['RSI'].max():.2f}"
+                    st.info(f"📊 Data ranges: {zscore_range}, {rsi_range}")
+                    
+                    # Check if conditions are too strict
+                    extreme_zscore_count = len(trading_df[(trading_df['Z-Score'] <= long_entry_zscore) | (trading_df['Z-Score'] >= short_entry_zscore)])
+                    st.info(f"📊 Extreme Z-Score conditions met: {extreme_zscore_count} times")
 
 def main():
     st.sidebar.title("Navigation")
