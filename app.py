@@ -253,8 +253,8 @@ def test_cointegration(series1, series2):
         'p-value': adf_result[1],
         'Critical Values': adf_result[4],
         'Is Cointegrated': adf_result[1] < 0.05,  # p-value < 0.05 indicates cointegration
-        'Regression Coefficient': model.params[1],
-        'Regression Intercept': model.params[0],
+        'Regression Coefficient': model.params.iloc[1],
+        'Regression Intercept': model.params.iloc[0],
         'Regression R-squared': model.rsquared
     }
     
@@ -648,6 +648,15 @@ def backtest_page():
         
         # Add debugging information
         st.header("🔍 Trading Parameters Debug")
+        
+        # Create date range string safely
+        if len(trading_df) > 0:
+            start_date_str = trading_df['Date'].min().strftime('%Y-%m-%d')
+            end_date_str = trading_df['Date'].max().strftime('%Y-%m-%d')
+            date_range_str = f"{start_date_str} to {end_date_str}"
+        else:
+            date_range_str = "No data"
+        
         debug_params = {
             'Parameter': [
                 'Long Entry Z-Score', 'Long Exit Z-Score', 'Short Entry Z-Score', 'Short Exit Z-Score',
@@ -656,10 +665,10 @@ def backtest_page():
                 'Data Points Available', 'Date Range'
             ],
             'Value': [
-                long_entry_zscore, long_exit_zscore, short_entry_zscore, short_exit_zscore,
-                long_entry_rsi, long_exit_rsi, short_entry_rsi, short_exit_rsi,
-                use_rsi_for_entry, use_rsi_for_exit, max_days_in_trade, target_profit_pct, stop_loss_pct,
-                len(trading_df), f"{trading_df['Date'].min().strftime('%Y-%m-%d')} to {trading_df['Date'].max().strftime('%Y-%m-%d')}"
+                str(long_entry_zscore), str(long_exit_zscore), str(short_entry_zscore), str(short_exit_zscore),
+                str(long_entry_rsi), str(long_exit_rsi), str(short_entry_rsi), str(short_exit_rsi),
+                str(use_rsi_for_entry), str(use_rsi_for_exit), str(max_days_in_trade), str(target_profit_pct), str(stop_loss_pct),
+                str(len(trading_df)), date_range_str
             ]
         }
         debug_params_df = pd.DataFrame(debug_params)
