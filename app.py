@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 from statsmodels.tsa.stattools import adfuller
 from scipy import stats
 import statsmodels.api as sm
+from statsmodels.tsa.vector_ar.vecm import coint_johansen
+from scipy.signal import hilbert
 
 # Create a directory for storing data if it doesn't exist
 DATA_DIR = "data_storage"
@@ -163,12 +165,14 @@ def calculate_zscore(series, window=50):
     rolling_mean = series.rolling(window=window).mean()
     rolling_std = series.rolling(window=window).std()
     zscore = (series - rolling_mean) / rolling_std
+    # Handle division by zero and infinite values
+    zscore = zscore.replace([np.inf, -np.inf], np.nan)
     return zscore
 
 def calculate_rsi(series, window=14):
     """Calculate the Relative Strength Index (RSI) for a given series using a rolling window."""
     delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    gain = delta.where(delta > 0, 0).rolling(window=window).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs))
@@ -255,6 +259,125 @@ def test_cointegration(series1, series2):
     }
     
     return result, spread, model
+
+def calculate_hurst_exponent(series, max_lag=20):
+    """
+    Calculate the Hurst exponent for a time series.
+    
+    Args:
+        series: Time series data
+        max_lag: Maximum lag to consider
+    
+    Returns:
+        hurst_exponent: Hurst exponent value
+    """
+    try:
+        # Remove NaN values
+        series = series.dropna()
+        
+        if len(series) < max_lag:
+            return np.nan
+            
+        # Calculate R/S (Rescaled Range) for different lags
+        lags = range(2, min(max_lag, len(series)//2))
+        rs_values = []
+        
+        for lag in lags:
+            # Split series into chunks of size lag
+            chunks = [series[i:i+lag] for i in range(0, len(series) - lag + 1, lag)]
+            
+            if not chunks:
+                continue
+                
+            rs_chunk_values = []
+            for chunk in chunks:
+                if len(chunk) < 2:
+                    continue
+                    
+                # Calculate mean
+                mean_chunk = chunk.mean()
+                
+                # Calculate cumulative deviation
+                cum_dev = (chunk - mean_chunk).cumsum()
+                
+                # Calculate R (range)
+                R = cum_dev.max() - cum_dev.min()
+                
+                # Calculate S (standard deviation)
+                S = chunk.std()
+                
+                if S != 0:
+                    rs_chunk_values.append(R / S)
+            
+            if rs_chunk_values:
+                rs_values.append(np.mean(rs_chunk_values))
+        
+        if len(rs_values) < 2:
+            return np.nan
+            
+        # Calculate Hurst exponent using linear regression
+        log_lags = np.log(lags[:len(rs_values)])
+        log_rs = np.log(rs_values)
+        
+        # Linear regression
+        slope, intercept, r_value, p_value, std_err = stats.linregress(log_lags, log_rs)
+        
+        return slope
+        
+    except Exception as e:
+        return np.nan
+
+def test_johansen_cointegration(series1, series2, significance_level=0.05):
+    """
+    Test for cointegration using Johansen test.
+    
+    Args:
+        series1: First time series
+        series2: Second time series
+        significance_level: Significance level for the test
+    
+    Returns:
+        result: Dictionary containing Johansen test results
+    """
+    try:
+        # Prepare data for Johansen test
+        data = pd.DataFrame({'series1': series1, 'series2': series2})
+        data = data.dropna()
+        
+        if len(data) < 10:  # Need sufficient data
+            return {
+                'Is Cointegrated': False,
+                'Trace Statistic': np.nan,
+                'Critical Value': np.nan,
+                'p-value': np.nan,
+                'Error': 'Insufficient data'
+            }
+        
+        # Run Johansen test
+        result = coint_johansen(data, det_order=0, k_ar_diff=1)
+        
+        # Check if cointegrated (trace statistic > critical value)
+        trace_stat = result.lr1[0]  # Trace statistic for r=0
+        critical_value = result.cvt[0, 1]  # Critical value at 5%
+        
+        is_cointegrated = trace_stat > critical_value
+        
+        return {
+            'Is Cointegrated': is_cointegrated,
+            'Trace Statistic': trace_stat,
+            'Critical Value': critical_value,
+            'p-value': result.pvalue[0] if hasattr(result, 'pvalue') else np.nan,
+            'Error': None
+        }
+        
+    except Exception as e:
+        return {
+            'Is Cointegrated': False,
+            'Trace Statistic': np.nan,
+            'Critical Value': np.nan,
+            'p-value': np.nan,
+            'Error': str(e)
+        }
 
 def data_storage_page():
     """Data Storage page to download and store stock data."""
@@ -414,7 +537,7 @@ def backtest_page():
         if use_rsi_for_entry:
             long_entry_rsi = st.slider("Long Entry RSI", 0, 100, 30, key="long_entry_rsi")
         else:
-            long_entry_rsi = 0  # Default value, won't be used
+            long_entry_rsi = 100  # Impossible value when disabled
             
         if use_rsi_for_exit:
             long_exit_rsi = st.slider("Long Exit RSI", 0, 100, 70, key="long_exit_rsi")
@@ -430,7 +553,7 @@ def backtest_page():
         if use_rsi_for_entry:
             short_entry_rsi = st.slider("Short Entry RSI", 0, 100, 70, key="short_entry_rsi")
         else:
-            short_entry_rsi = 100  # Default value, won't be used
+            short_entry_rsi = 0  # Impossible value when disabled
             
         if use_rsi_for_exit:
             short_exit_rsi = st.slider("Short Exit RSI", 0, 100, 30, key="short_exit_rsi")
@@ -452,6 +575,15 @@ def backtest_page():
     
     # Add a "Go" button
     if st.button("Go"):
+        # Data validation
+        comparison_df = comparison_df.dropna()
+        comparison_df = comparison_df[comparison_df['Ratio'] != 0]
+        comparison_df = comparison_df[comparison_df['Ratio'].notna()]
+        
+        if len(comparison_df) < 50:
+            st.error("Insufficient data after cleaning. Need at least 50 data points.")
+            return
+        
         # Calculate Z-Score of Ratio
         comparison_df['Z-Score'] = calculate_zscore(comparison_df['Ratio'], window=zscore_lookback)
         
@@ -479,11 +611,17 @@ def backtest_page():
             # Calculate correlation
             correlation = stat_df[stock1].corr(stat_df[stock2])
             
-            # Run cointegration test
+            # Run Engle-Granger cointegration test
             coint_result, spread, model = test_cointegration(stat_df[stock1], stat_df[stock2])
             
-            # Display results in two columns
-            col1, col2 = st.columns(2)
+            # Run Johansen cointegration test
+            johansen_result = test_johansen_cointegration(stat_df[stock1], stat_df[stock2])
+            
+            # Calculate Hurst exponent for the ratio
+            hurst_exponent = calculate_hurst_exponent(comparison_df['Ratio'])
+            
+            # Display results in three columns
+            col1, col2, col3 = st.columns(3)
             
             with col1:
                 st.subheader("Correlation Analysis")
@@ -506,7 +644,7 @@ def backtest_page():
                 st.write(f"**Interpretation:** {correlation_direction} {correlation_strength} correlation")
             
             with col2:
-                st.subheader("Cointegration Analysis")
+                st.subheader("Engle-Granger Cointegration")
                 st.write(f"**Lookback Period:** {len(stat_df)} days")
                 st.write(f"**ADF Test Statistic:** {coint_result['ADF Statistic']:.4f}")
                 st.write(f"**p-value:** {coint_result['p-value']:.4f}")
@@ -517,11 +655,93 @@ def backtest_page():
                 else:
                     st.warning("**Result:** Not cointegrated (p >= 0.05)")
             
+            with col3:
+                st.subheader("Johansen Cointegration")
+                st.write(f"**Lookback Period:** {len(stat_df)} days")
+                if johansen_result['Error'] is None:
+                    st.write(f"**Trace Statistic:** {johansen_result['Trace Statistic']:.4f}")
+                    st.write(f"**Critical Value:** {johansen_result['Critical Value']:.4f}")
+                    
+                    if johansen_result['Is Cointegrated']:
+                        st.success("**Result:** Cointegrated")
+                    else:
+                        st.warning("**Result:** Not cointegrated")
+                else:
+                    st.error(f"**Error:** {johansen_result['Error']}")
+            
+            # Display Hurst exponent
+            st.subheader("Hurst Exponent Analysis")
+            if not np.isnan(hurst_exponent):
+                st.write(f"**Hurst Exponent:** {hurst_exponent:.4f}")
+                
+                # Interpret Hurst exponent
+                if hurst_exponent > 0.5:
+                    hurst_interpretation = "Trending (Mean-reverting pairs trading may not be optimal)"
+                elif hurst_exponent < 0.5:
+                    hurst_interpretation = "Mean-reverting (Good for pairs trading)"
+                else:
+                    hurst_interpretation = "Random walk"
+                
+                st.write(f"**Interpretation:** {hurst_interpretation}")
+            else:
+                st.warning("**Hurst Exponent:** Could not be calculated")
+            
             # Add a visual separator
             st.markdown("---")
             
+            # Add ratio analysis visualizations
+            st.header("Ratio Analysis")
+            
+            # Create charts for ratio analysis
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Price Ratio Over Time")
+                st.line_chart(comparison_df.set_index('Date')['Ratio'])
+            
+            with col2:
+                st.subheader("Z-Score Over Time")
+                st.line_chart(comparison_df.set_index('Date')['Z-Score'])
+            
+            # RSI chart
+            st.subheader("RSI Over Time")
+            st.line_chart(comparison_df.set_index('Date')['RSI'])
+            
+            # Add statistical summary
+            st.subheader("Ratio Statistics")
+            ratio_stats = {
+                'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Current Z-Score', 'Current RSI'],
+                'Value': [
+                    f"{comparison_df['Ratio'].mean():.4f}",
+                    f"{comparison_df['Ratio'].std():.4f}",
+                    f"{comparison_df['Ratio'].min():.4f}",
+                    f"{comparison_df['Ratio'].max():.4f}",
+                    f"{comparison_df['Z-Score'].iloc[-1]:.2f}" if not np.isnan(comparison_df['Z-Score'].iloc[-1]) else "N/A",
+                    f"{comparison_df['RSI'].iloc[-1]:.2f}" if not np.isnan(comparison_df['RSI'].iloc[-1]) else "N/A"
+                ]
+            }
+            ratio_stats_df = pd.DataFrame(ratio_stats)
+            st.dataframe(ratio_stats_df, hide_index=True)
+            
         except Exception as e:
             st.error(f"Error in correlation/cointegration analysis: {e}")
+        
+        # Cointegration filter for trading
+        st.header("Cointegration Filter")
+        use_cointegration_filter = st.checkbox("Enable Cointegration Filter", value=True, 
+                                             help="Only trade when pair is cointegrated according to Johansen test")
+        
+        if use_cointegration_filter and johansen_result['Error'] is None:
+            if not johansen_result['Is Cointegrated']:
+                st.warning("⚠️ Pair is not cointegrated. Trading is disabled.")
+                return
+            else:
+                st.success("✅ Pair is cointegrated. Trading enabled.")
+        elif use_cointegration_filter and johansen_result['Error'] is not None:
+            st.warning("⚠️ Could not determine cointegration status. Trading disabled.")
+            return
+        else:
+            st.info("ℹ️ Cointegration filter disabled. Trading will proceed regardless of cointegration status.")
         
         # Calculate trade results
         trades = []
@@ -656,6 +876,20 @@ def backtest_page():
             
             # Check for new trade entries (only if not already in a trade)
             elif not in_long_trade and not in_short_trade:
+                # Dynamic cointegration check for this day
+                daily_cointegrated = True
+                if use_cointegration_filter:
+                    # Get data up to current date for cointegration test
+                    current_data = comparison_df[comparison_df['Date'] <= current_date]
+                    if len(current_data) >= 30:  # Need sufficient data for test
+                        daily_johansen = test_johansen_cointegration(
+                            current_data[stock1], 
+                            current_data[stock2]
+                        )
+                        daily_cointegrated = daily_johansen['Is Cointegrated'] if daily_johansen['Error'] is None else False
+                    else:
+                        daily_cointegrated = False
+                
                 # Check long trade entry conditions
                 long_zscore_condition = current_zscore <= long_entry_zscore
                 long_rsi_condition = not use_rsi_for_entry or current_rsi <= long_entry_rsi
@@ -664,21 +898,25 @@ def backtest_page():
                 short_zscore_condition = current_zscore >= short_entry_zscore
                 short_rsi_condition = not use_rsi_for_entry or current_rsi >= short_entry_rsi
                 
-                # Enter long trade if conditions are met
-                if long_zscore_condition and long_rsi_condition:
+                # Enter long trade if conditions are met and pair is cointegrated
+                if long_zscore_condition and long_rsi_condition and daily_cointegrated:
                     in_long_trade = True
                     long_entry_price = current_ratio
                     long_entry_date = current_date
                     long_entry_index = index
                     row_debug['Action'] = 'Enter Long'
+                elif long_zscore_condition and long_rsi_condition and not daily_cointegrated:
+                    row_debug['Action'] = 'Long Signal (Not Cointegrated)'
                 
-                # Enter short trade if conditions are met
-                elif short_zscore_condition and short_rsi_condition:
+                # Enter short trade if conditions are met and pair is cointegrated
+                elif short_zscore_condition and short_rsi_condition and daily_cointegrated:
                     in_short_trade = True
                     short_entry_price = current_ratio
                     short_entry_date = current_date
                     short_entry_index = index
                     row_debug['Action'] = 'Enter Short'
+                elif short_zscore_condition and short_rsi_condition and not daily_cointegrated:
+                    row_debug['Action'] = 'Short Signal (Not Cointegrated)'
             
             # Add debug info for this row
             debug_info.append(row_debug)
@@ -735,6 +973,30 @@ def backtest_page():
             st.header("Trade Actions Log")
             action_debug_df = debug_df[debug_df['Action'] != 'None']
             st.dataframe(action_debug_df, hide_index=True)
+            
+            # Analyze cointegration filter results
+            if use_cointegration_filter:
+                st.header("Cointegration Filter Analysis")
+                
+                # Count different types of signals
+                total_signals = len(action_debug_df[action_debug_df['Action'].str.contains('Signal', na=False)])
+                cointegrated_signals = len(action_debug_df[action_debug_df['Action'].str.contains('Enter', na=False)])
+                non_cointegrated_signals = len(action_debug_df[action_debug_df['Action'].str.contains('Not Cointegrated', na=False)])
+                
+                filter_summary = {
+                    'Metric': ['Total Trading Signals', 'Cointegrated Signals', 'Non-Cointegrated Signals', 'Signal Filter Rate (%)'],
+                    'Value': [
+                        total_signals,
+                        cointegrated_signals,
+                        non_cointegrated_signals,
+                        f"{(non_cointegrated_signals / total_signals * 100):.1f}" if total_signals > 0 else "0.0"
+                    ]
+                }
+                filter_summary_df = pd.DataFrame(filter_summary)
+                st.dataframe(filter_summary_df, hide_index=True)
+                
+                if non_cointegrated_signals > 0:
+                    st.info(f"ℹ️ {non_cointegrated_signals} trading signals were filtered out due to lack of cointegration.")
             
             # Calculate trade summary metrics
             total_trades = len(trades_df)

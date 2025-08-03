@@ -10,3 +10,4 @@ yfinance
 google-api-python-client
 statsmodels
 scipy
+scikit-learn
