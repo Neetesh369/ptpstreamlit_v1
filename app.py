@@ -523,6 +523,17 @@ def backtest_page():
     # Add Rolling window for correlation and cointegration
     rolling_window = st.number_input("Rolling Window for Correlation & Cointegration (days)", min_value=10, value=zscore_lookback, key="rolling_window")
     
+    # Add new entry filters section
+    st.markdown("### Entry Filters")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        coint_correl_enabled = st.checkbox("✅ Enable Cointegration & Correlation Filter", value=True, help="Enable to use Correlation and Cointegration values for trade entry")
+    with col2:
+        min_correl_input = st.number_input("Min. Correlation for Entry", min_value=-1.0, max_value=1.0, value=0.6, step=0.01, format="%.2f", disabled=not coint_correl_enabled, help="Correlation value must be greater than this for entry")
+    with col3:
+        max_coint_pvalue_input = st.number_input("Max. Cointegration p-value for Entry", min_value=0.0, max_value=1.0, value=0.05, step=0.01, format="%.2f", disabled=not coint_correl_enabled, help="Cointegration p-value must be less than this for entry")
+        
     # Add RSI checkboxes with a more visible style
     st.markdown("### RSI Settings")
     st.markdown("Enable or disable RSI conditions for trade entry and exit")
@@ -693,13 +704,15 @@ def backtest_page():
             'Parameter': [
                 'Long Entry Z-Score', 'Long Exit Z-Score', 'Short Entry Z-Score', 'Short Exit Z-Score',
                 'Long Entry RSI', 'Long Exit RSI', 'Short Entry RSI', 'Short Exit RSI',
-                'Use RSI for Entry', 'Use RSI for Exit', 'Max Days in Trade', 'Target Profit %', 'Stop Loss %',
+                'Use RSI for Entry', 'Use RSI for Exit', 'Use Cointegration/Correlation', 'Min Correlation', 'Max Cointegration p-value',
+                'Max Days in Trade', 'Target Profit %', 'Stop Loss %',
                 'Data Points Available', 'Date Range', 'Rolling Window'
             ],
             'Value': [
                 str(long_entry_zscore), str(long_exit_zscore), str(short_entry_zscore), str(short_exit_zscore),
                 str(long_entry_rsi), str(long_exit_rsi), str(short_entry_rsi), str(short_exit_rsi),
-                str(use_rsi_for_entry), str(use_rsi_for_exit), str(max_days_in_trade), str(target_profit_pct), str(stop_loss_pct),
+                str(use_rsi_for_entry), str(use_rsi_for_exit), str(coint_correl_enabled), str(min_correl_input), str(max_coint_pvalue_input),
+                str(max_days_in_trade), str(target_profit_pct), str(stop_loss_pct),
                 str(len(trading_df)), f"{trading_df['Date'].min().strftime('%Y-%m-%d')} to {trading_df['Date'].max().strftime('%Y-%m-%d')}",
                 str(rolling_window)
             ]
@@ -873,6 +886,10 @@ def backtest_page():
             current_rsi = row['RSI']
             current_ratio = row['Ratio']
             
+            # Get rolling correlation and cointegration p-value for the current day
+            current_correl = row['Rolling Correlation']
+            current_coint_pvalue = row['Rolling Engle-Granger p-value']
+            
             # Check for trade exit conditions if in a trade
             if in_trade:
                 days_in_trade = (current_date - entry_date).days
@@ -983,8 +1000,17 @@ def backtest_page():
                 long_rsi_ok = not use_rsi_for_entry or current_rsi <= long_entry_rsi
                 short_rsi_ok = not use_rsi_for_entry or current_rsi >= short_entry_rsi
                 
-                # Enter long trade if crossover and RSI conditions are met
-                if long_crossover and long_rsi_ok:
+                # Check Coint/Correl conditions
+                coint_correl_ok = True # Default to True if filter is disabled
+                if coint_correl_enabled:
+                    # Make sure values are not NaN before checking
+                    if not np.isnan(current_correl) and not np.isnan(current_coint_pvalue):
+                        coint_correl_ok = (current_correl > min_correl_input) and (current_coint_pvalue < max_coint_pvalue_input)
+                    else:
+                        coint_correl_ok = False # Fail the check if values are NaN
+                
+                # Enter long trade if all conditions are met
+                if long_crossover and long_rsi_ok and coint_correl_ok:
                     in_trade = True
                     trade_type = 'Long'
                     entry_price = current_ratio
@@ -992,8 +1018,8 @@ def backtest_page():
                     entry_index = index
                     trade_count += 1
                 
-                # Enter short trade if crossover and RSI conditions are met
-                elif short_crossover and short_rsi_ok:
+                # Enter short trade if all conditions are met
+                elif short_crossover and short_rsi_ok and coint_correl_ok:
                     in_trade = True
                     trade_type = 'Short'
                     entry_price = current_ratio
