@@ -815,8 +815,6 @@ def backtest_page():
             st.error(f"Error in correlation/cointegration analysis: {e}")
             
         # The backtesting logic starts here
-        # Debug information
-        debug_info = []
         trades = [] # Initialize trades list
         trade_count = 0
         
@@ -833,15 +831,6 @@ def backtest_page():
             current_zscore = row['Z-Score']
             current_rsi = row['RSI']
             current_ratio = row['Ratio']
-            
-            # Debug data for this row
-            row_debug = {
-                'Date': current_date,
-                'Z-Score': current_zscore,
-                'RSI': current_rsi,
-                'Ratio': current_ratio,
-                'Action': 'None'
-            }
             
             # Check for trade exit conditions if in a trade
             if in_trade:
@@ -885,10 +874,9 @@ def backtest_page():
                             'Profit': profit,
                             'Profit %': profit_pct,
                             'Type': 'Long',
-                            'Exit Reason': exit_reason
+                            'Entry Action': 'Enter Long',
+                            'Exit Action': f'Exit Long: {exit_reason}'
                         })
-                        
-                        row_debug['Action'] = f'Exit Long: {exit_reason}'
                         
                         in_trade = False
                         trade_type = None
@@ -934,10 +922,9 @@ def backtest_page():
                             'Profit': profit,
                             'Profit %': profit_pct,
                             'Type': 'Short',
-                            'Exit Reason': exit_reason
+                            'Entry Action': 'Enter Short',
+                            'Exit Action': f'Exit Short: {exit_reason}'
                         })
-                        
-                        row_debug['Action'] = f'Exit Short: {exit_reason}'
                         
                         in_trade = False
                         trade_type = None
@@ -962,7 +949,6 @@ def backtest_page():
                     entry_price = current_ratio
                     entry_date = current_date
                     entry_index = index
-                    row_debug['Action'] = f'Enter Long (Crossover: {prev_zscore:.2f} → {current_zscore:.2f})'
                     trade_count += 1
                 
                 # Enter short trade if crossover and RSI conditions are met
@@ -972,15 +958,11 @@ def backtest_page():
                     entry_price = current_ratio
                     entry_date = current_date
                     entry_index = index
-                    row_debug['Action'] = f'Enter Short (Crossover: {prev_zscore:.2f} → {current_zscore:.2f})'
                     trade_count += 1
             
             # Update previous Z-score for next iteration
             prev_zscore = current_zscore
             
-            # Add debug info for this row
-            debug_info.append(row_debug)
-        
         # Close any open trades at the end of the data
         if in_trade:
             last_row = trading_df.iloc[-1]
@@ -1003,7 +985,8 @@ def backtest_page():
                 'Profit': profit,
                 'Profit %': profit_pct,
                 'Type': trade_type,
-                'Exit Reason': 'End of Data'
+                'Entry Action': f'Enter {trade_type}',
+                'Exit Action': 'Exit: End of Data'
             })
         
         # Display trade results
@@ -1013,31 +996,25 @@ def backtest_page():
             # Debug: Show trade count immediately
             st.success(f"✅ {len(trades)} trades executed successfully!")
             
-            # Create date-wise trade results table
-            st.header("📊 Date-wise Trade Results")
+            # Create a combined trade results table
+            st.header("📊 Trade Results & Actions Log")
             
-            # Prepare the trade results table with requested columns
-            trade_results_table = trades_df.copy()
-            trade_results_table['Date'] = trade_results_table['Entry Date'].dt.strftime('%Y-%m-%d')
-            trade_results_table['Long Stock'] = stock1
-            trade_results_table['Short Stock'] = stock2
-            trade_results_table['Profit/Loss %'] = trade_results_table['Profit %'].round(2)
-            trade_results_table['Holding Period (Days)'] = trade_results_table['Days in Trade']
+            # Select and format columns for the new combined table
+            trades_df['Profit/Loss %'] = trades_df['Profit %'].round(2)
+            trades_df['Holding Period (Days)'] = trades_df['Days in Trade']
             
-            # Select and rename columns for display
-            display_columns = ['Date', 'Long Stock', 'Short Stock', 'Profit/Loss %', 'Holding Period (Days)', 'Type', 'Exit Reason']
-            trade_display = trade_results_table[display_columns].copy()
+            # Create a table that is a combination of the two previous tables
+            display_columns = [
+                'Entry Date', 'Exit Date', 'Type', 'Entry Action', 'Exit Action', 
+                'Profit/Loss %', 'Holding Period (Days)'
+            ]
             
-            # Display the trade results table
+            trade_display = trades_df[display_columns].copy()
+            trade_display['Entry Date'] = trade_display['Entry Date'].dt.strftime('%Y-%m-%d')
+            trade_display['Exit Date'] = trade_display['Exit Date'].dt.strftime('%Y-%m-%d')
+            
+            # Display the combined trade results table
             st.dataframe(trade_display, use_container_width=True, hide_index=True)
-            
-            # Create a debug dataframe
-            debug_df = pd.DataFrame(debug_info)
-            
-            # Show debug information (only rows with actions)
-            st.header("Trade Actions Log")
-            action_debug_df = debug_df[debug_df['Action'] != 'None']
-            st.dataframe(action_debug_df, hide_index=True)
             
             # Calculate comprehensive trade summary metrics
             total_trades = len(trades_df)
@@ -1097,7 +1074,7 @@ def backtest_page():
             
             # Display exit reason statistics
             st.subheader("Exit Reasons")
-            exit_reasons = trades_df['Exit Reason'].value_counts()
+            exit_reasons = trades_df['Exit Action'].value_counts()
             exit_reasons_df = pd.DataFrame({
                 'Exit Reason': exit_reasons.index,
                 'Count': exit_reasons.values
