@@ -379,6 +379,47 @@ def test_johansen_cointegration(series1, series2, significance_level=0.05):
             'Error': str(e)
         }
 
+def calculate_half_life(series):
+    """
+    Calculates the half-life of a time series using an Ornstein-Uhlenbeck (OU) process.
+    
+    Args:
+        series: Time series data
+    
+    Returns:
+        half_life: Half-life in time units of the series, or np.nan on error.
+    """
+    try:
+        # Remove NaNs
+        series = series.dropna()
+        if len(series) < 2:
+            return np.nan
+        
+        # Calculate the log difference of the series
+        y = series.diff().dropna()
+        
+        # Lag the series
+        x = series.shift(1).dropna()
+        
+        # Ensure x and y have the same length
+        x = x[-len(y):]
+        
+        # Add a constant for the regression
+        x = sm.add_constant(x)
+        
+        # Run OLS regression
+        model = sm.OLS(y, x).fit()
+        
+        # The slope is -lambda, where lambda is the rate of mean reversion
+        lamda = -model.params[1]
+        
+        # Calculate half-life
+        half_life = -np.log(2) / lamda
+        
+        return half_life
+    except Exception:
+        return np.nan
+
 def data_storage_page():
     """Data Storage page to download and store stock data."""
     st.title("📂 Data Storage")
@@ -779,6 +820,9 @@ def backtest_page():
             # Calculate Hurst exponent for the ratio using selected date range
             hurst_exponent = calculate_hurst_exponent(stat_df['Ratio'])
             
+            # Calculate half-life of the pair's ratio
+            half_life_val = calculate_half_life(stat_df['Ratio'])
+            
             # Display results in three columns
             col1, col2, col3 = st.columns(3)
             
@@ -828,22 +872,32 @@ def backtest_page():
                 else:
                     st.error(f"**Error:** {johansen_result['Error']}")
             
-            # Display Hurst exponent
-            st.subheader("Hurst Exponent Analysis")
-            if not np.isnan(hurst_exponent):
-                st.write(f"**Hurst Exponent:** {hurst_exponent:.4f}")
-                
-                # Interpret Hurst exponent
-                if hurst_exponent > 0.5:
-                    hurst_interpretation = "Trending (Mean-reverting pairs trading may not be optimal)"
-                elif hurst_exponent < 0.5:
-                    hurst_interpretation = "Mean-reverting (Good for pairs trading)"
+            # Display Hurst exponent and Half-life in a single section
+            st.subheader("Mean Reversion Analysis")
+            col1_mr, col2_mr = st.columns(2)
+            
+            with col1_mr:
+                if not np.isnan(hurst_exponent):
+                    st.write(f"**Hurst Exponent:** {hurst_exponent:.4f}")
+                    
+                    # Interpret Hurst exponent
+                    if hurst_exponent > 0.5:
+                        hurst_interpretation = "Trending (Mean-reverting pairs trading may not be optimal)"
+                    elif hurst_exponent < 0.5:
+                        hurst_interpretation = "Mean-reverting (Good for pairs trading)"
+                    else:
+                        hurst_interpretation = "Random walk"
+                    
+                    st.write(f"**Interpretation:** {hurst_interpretation}")
                 else:
-                    hurst_interpretation = "Random walk"
-                
-                st.write(f"**Interpretation:** {hurst_interpretation}")
-            else:
-                st.warning("**Hurst Exponent:** Could not be calculated")
+                    st.warning("**Hurst Exponent:** Could not be calculated")
+            
+            with col2_mr:
+                if not np.isnan(half_life_val):
+                    st.write(f"**Half-Life of Ratio:** {half_life_val:.2f} days")
+                    st.info("The half-life indicates the number of days it takes for the ratio to revert halfway to its mean.")
+                else:
+                    st.warning("**Half-Life:** Could not be calculated. Ensure the series is mean-reverting.")
             
             # Add a visual separator
             st.markdown("---")
