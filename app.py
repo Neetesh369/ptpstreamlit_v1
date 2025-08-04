@@ -520,6 +520,9 @@ def backtest_page():
     with col2:
         rsi_period = st.number_input("RSI Period (days)", min_value=1, value=14, key="rsi_period")
     
+    # Add Rolling window for correlation and cointegration
+    rolling_window = st.number_input("Rolling Window for Correlation & Cointegration (days)", min_value=10, value=zscore_lookback, key="rolling_window")
+    
     # Add RSI checkboxes with a more visible style
     st.markdown("### RSI Settings")
     st.markdown("Enable or disable RSI conditions for trade entry and exit")
@@ -603,8 +606,8 @@ def backtest_page():
         comparison_df = comparison_df[comparison_df['Ratio'] != 0]
         comparison_df = comparison_df[comparison_df['Ratio'].notna()]
         
-        if len(comparison_df) < 50:
-            st.error("Insufficient data after cleaning. Need at least 50 data points.")
+        if len(comparison_df) < max(50, rolling_window):
+            st.error(f"Insufficient data after cleaning. Need at least {max(50, rolling_window)} data points.")
             return
         
         # Calculate Z-Score of Ratio
@@ -612,6 +615,50 @@ def backtest_page():
         
         # Calculate RSI of Ratio
         comparison_df['RSI'] = calculate_rsi(comparison_df['Ratio'], window=rsi_period)
+        
+        # --- NEW CODE FOR ROLLING CALCULATIONS ---
+        
+        # Calculate Rolling Pearson Correlation
+        comparison_df['Rolling Correlation'] = comparison_df[stock1].rolling(window=rolling_window).corr(comparison_df[stock2])
+        
+        # Calculate Rolling Engle-Granger p-value
+        def rolling_engle_granger_pvalue(series):
+            if len(series) < 10: # Minimum data points for ADF test
+                return np.nan
+            
+            # Use the existing test_cointegration function
+            # Need to pass in two series, but rolling window gives one.
+            # This is tricky. Let's create a more direct way to get the p-value.
+            
+            # First, check if the series has enough data
+            if len(series) < rolling_window:
+                return np.nan
+            
+            # Extract the two series from the rolling window data
+            # This requires a different approach. We'll iterate manually.
+            return np.nan # Placeholder for now, as direct rolling application is not straightforward with the current function
+        
+        # Let's create a manual rolling calculation for cointegration p-value
+        rolling_pvalues = []
+        for i in range(len(comparison_df)):
+            if i < rolling_window:
+                rolling_pvalues.append(np.nan)
+            else:
+                window_data = comparison_df.iloc[i-rolling_window:i]
+                series1 = window_data[stock1]
+                series2 = window_data[stock2]
+                
+                # Check if window has enough data
+                if len(series1.dropna()) > 10:
+                    try:
+                        _, pvalue, _ = test_cointegration(series1, series2)
+                        rolling_pvalues.append(pvalue)
+                    except Exception:
+                        rolling_pvalues.append(np.nan)
+                else:
+                    rolling_pvalues.append(np.nan)
+        
+        comparison_df['Rolling Engle-Granger p-value'] = rolling_pvalues
         
         # Filter data for calculation table and trading based on selected date range
         if analysis_start_date and analysis_end_date:
@@ -633,8 +680,15 @@ def backtest_page():
         st.header("📊 Calculation Table")
         
         # Create calculation table with all required columns
-        calc_table = trading_df[['Date', stock1, stock2, 'Ratio', 'Z-Score', 'RSI']].copy()
-        calc_table.columns = ['Date', f'{stock1} Price', f'{stock2} Price', 'Ratio', 'Z-Score', 'RSI']
+        calc_table = trading_df[[
+            'Date', stock1, stock2, 'Ratio', 'Z-Score', 'RSI',
+            'Rolling Correlation', 'Rolling Engle-Granger p-value'
+        ]].copy()
+        
+        calc_table.columns = [
+            'Date', f'{stock1} Price', f'{stock2} Price', 'Ratio', 'Z-Score', 'RSI',
+            'Rolling Correlation', 'Rolling Engle-Granger p-value'
+        ]
         
         # Format the table for better display
         calc_table['Ratio'] = calc_table['Ratio'].round(4)
@@ -642,6 +696,8 @@ def backtest_page():
         calc_table['RSI'] = calc_table['RSI'].round(2)
         calc_table[f'{stock1} Price'] = calc_table[f'{stock1} Price'].round(2)
         calc_table[f'{stock2} Price'] = calc_table[f'{stock2} Price'].round(2)
+        calc_table['Rolling Correlation'] = calc_table['Rolling Correlation'].round(4)
+        calc_table['Rolling Engle-Granger p-value'] = calc_table['Rolling Engle-Granger p-value'].round(4)
         
         # Display as scrollable table
         st.dataframe(calc_table, use_container_width=True, height=400)
@@ -654,13 +710,14 @@ def backtest_page():
                 'Long Entry Z-Score', 'Long Exit Z-Score', 'Short Entry Z-Score', 'Short Exit Z-Score',
                 'Long Entry RSI', 'Long Exit RSI', 'Short Entry RSI', 'Short Exit RSI',
                 'Use RSI for Entry', 'Use RSI for Exit', 'Max Days in Trade', 'Target Profit %', 'Stop Loss %',
-                'Data Points Available', 'Date Range'
+                'Data Points Available', 'Date Range', 'Rolling Window'
             ],
             'Value': [
                 str(long_entry_zscore), str(long_exit_zscore), str(short_entry_zscore), str(short_exit_zscore),
                 str(long_entry_rsi), str(long_exit_rsi), str(short_entry_rsi), str(short_exit_rsi),
                 str(use_rsi_for_entry), str(use_rsi_for_exit), str(max_days_in_trade), str(target_profit_pct), str(stop_loss_pct),
-                str(len(trading_df)), f"{trading_df['Date'].min().strftime('%Y-%m-%d')} to {trading_df['Date'].max().strftime('%Y-%m-%d')}"
+                str(len(trading_df)), f"{trading_df['Date'].min().strftime('%Y-%m-%d')} to {trading_df['Date'].max().strftime('%Y-%m-%d')}",
+                str(rolling_window)
             ]
         }
         debug_params_df = pd.DataFrame(debug_params)
