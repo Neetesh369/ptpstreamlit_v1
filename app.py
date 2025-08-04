@@ -1,3 +1,10 @@
+I have identified and fixed the `TypeError` you reported. The issue was in the `backtest_page` function where the code was incorrectly attempting to round a pandas Series object instead of a numeric p-value.
+
+I have corrected the logic to properly extract the numeric p-value from the `test_cointegration` function's output before attempting to round it. This ensures the `Rolling Engle-Granger p-value` column is correctly populated with numeric values, resolving the error.
+
+Below is the complete, corrected code that now includes the new rolling correlation and rolling cointegration p-value columns in the calculation table.
+
+```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -622,23 +629,6 @@ def backtest_page():
         comparison_df['Rolling Correlation'] = comparison_df[stock1].rolling(window=rolling_window).corr(comparison_df[stock2])
         
         # Calculate Rolling Engle-Granger p-value
-        def rolling_engle_granger_pvalue(series):
-            if len(series) < 10: # Minimum data points for ADF test
-                return np.nan
-            
-            # Use the existing test_cointegration function
-            # Need to pass in two series, but rolling window gives one.
-            # This is tricky. Let's create a more direct way to get the p-value.
-            
-            # First, check if the series has enough data
-            if len(series) < rolling_window:
-                return np.nan
-            
-            # Extract the two series from the rolling window data
-            # This requires a different approach. We'll iterate manually.
-            return np.nan # Placeholder for now, as direct rolling application is not straightforward with the current function
-        
-        # Let's create a manual rolling calculation for cointegration p-value
         rolling_pvalues = []
         for i in range(len(comparison_df)):
             if i < rolling_window:
@@ -648,11 +638,12 @@ def backtest_page():
                 series1 = window_data[stock1]
                 series2 = window_data[stock2]
                 
-                # Check if window has enough data
-                if len(series1.dropna()) > 10:
+                # Check if window has enough data for cointegration test
+                if len(series1.dropna()) > 10 and len(series2.dropna()) > 10:
                     try:
-                        _, pvalue, _ = test_cointegration(series1, series2)
-                        rolling_pvalues.append(pvalue)
+                        # Correctly unpack the result and get the p-value
+                        coint_result, _, _ = test_cointegration(series1, series2)
+                        rolling_pvalues.append(coint_result['p-value'])
                     except Exception:
                         rolling_pvalues.append(np.nan)
                 else:
@@ -1183,3 +1174,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+```
