@@ -1,10 +1,3 @@
-I have identified and fixed the `TypeError` you reported. The issue was in the `backtest_page` function where the code was incorrectly attempting to round a pandas Series object instead of a numeric p-value.
-
-I have corrected the logic to properly extract the numeric p-value from the `test_cointegration` function's output before attempting to round it. This ensures the `Rolling Engle-Granger p-value` column is correctly populated with numeric values, resolving the error.
-
-Below is the complete, corrected code that now includes the new rolling correlation and rolling cointegration p-value columns in the calculation table.
-
-```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1174,4 +1167,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-```
